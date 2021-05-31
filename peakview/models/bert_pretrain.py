@@ -12,7 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""The main BERT model and related functions."""
+"""The main BERT models and related functions."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -26,12 +26,11 @@ import re
 import numpy as np
 import six
 import tensorflow as tf
-import estimator_creator
-import optimization_gpu
-import tf_util
+from common import model_builder
+from common import tf_util
 
 
-class ModelCreator(estimator_creator.ModelCreatorABC):
+class ModelCreator(model_builder.ModelCreatorABC):
     def __init__(self, model_name):
         super().__init__(model_name)
         self.model = None
@@ -51,8 +50,6 @@ class ModelCreator(estimator_creator.ModelCreatorABC):
         self.sentence_ids = None
         self.tts_dist = None
         self.sample_id = None
-        self.order_id = None
-        self.code_links = None
 
         self.embedding_output = None
 
@@ -87,14 +84,12 @@ class ModelCreator(estimator_creator.ModelCreatorABC):
 
             "sentence_ids": tf.io.FixedLenFeature([model_conf.max_position_embeddings], tf.int64),
             "tts_dist": tf.io.FixedLenFeature([model_conf.max_position_embeddings], tf.float32),
-            "sample_id": tf.io.FixedLenFeature([], tf.int64),
-            "order_id": tf.io.FixedLenFeature([], tf.string),
-            "code_links": tf.io.FixedLenFeature([], tf.string)
+            "sample_id": tf.io.FixedLenFeature([], tf.int64)
         }
         return name_to_features
 
     def create_model(self, features, labels, is_training):
-        """Creates a classification model."""
+        """Creates a classification models."""
         tf.logging.info("[create_model] creating ...")
         model_config = self.get_model_conf()
         use_tpu = False
@@ -113,8 +108,6 @@ class ModelCreator(estimator_creator.ModelCreatorABC):
         self.sentence_ids = features["sentence_ids"]
         self.tts_dist = features["tts_dist"]
         self.sample_id = features["sample_id"]
-        self.order_id = features["order_id"]
-        self.code_links = features["code_links"]
 
         model = BertModel(
             config=model_config,
@@ -140,13 +133,9 @@ class ModelCreator(estimator_creator.ModelCreatorABC):
         self.next_sentence_log_probs = next_sentence_log_probs
 
         # batch_mean_loss = masked_lm_loss + next_sentence_loss
-        batch_mean_loss = next_sentence_loss
+        batch_mean_loss = masked_lm_loss
         # batch_item_loss = masked_lm_example_loss + next_sentence_example_loss
-        batch_item_loss = next_sentence_example_loss
-        # TODO by Ethan 2021-04-22, 周四, 22:23:  create_train_scalars
-        tf.summary.scalar("next_sentence_loss", next_sentence_loss)
-        tf.summary.scalar("next_sentence_accuracy",
-                          tf_util.batch_accuracy_binary(next_sentence_log_probs, next_sentence_labels))
+        batch_item_loss = masked_lm_example_loss
         return (labels,
                 masked_lm_example_loss, masked_lm_log_probs, self.masked_lm_ids, self.masked_lm_weights,
                 next_sentence_example_loss, next_sentence_log_probs, next_sentence_labels,
@@ -159,16 +148,6 @@ class ModelCreator(estimator_creator.ModelCreatorABC):
         learning_rate = cls._decay_warmup_lr(global_step, init_lr, num_decay_steps, end_learning_rate, decay_pow,
                                              num_warmup_steps)
 
-        # It is recommended that you use this optimizer for fine tuning, since this
-        # is how the model was trained (note that the Adam m/v variables are NOT
-        # loaded from init_checkpoint.)
-        # optimizer = optimization_gpu.AdamWeightDecayOptimizer(
-        #     learning_rate=learning_rate,
-        #     weight_decay_rate=0.01,
-        #     beta_1=0.9,
-        #     beta_2=0.999,
-        #     epsilon=1e-6,
-        #     exclude_from_weight_decay=["LayerNorm", "layer_norm", "bias"])
         optimizer = tf.train.AdamOptimizer(learning_rate=5e-5)
 
         if use_tpu:
@@ -177,7 +156,7 @@ class ModelCreator(estimator_creator.ModelCreatorABC):
         tvars = tf.trainable_variables()
         grads = tf.gradients(loss, tvars)
 
-        # This is how the model was pre-trained.
+        # This is how the models was pre-trained.
         (grads, _) = tf.clip_by_global_norm(grads, clip_norm=1.0)
 
         train_op = optimizer.apply_gradients(zip(grads, tvars), global_step=global_step)
@@ -192,7 +171,7 @@ class ModelCreator(estimator_creator.ModelCreatorABC):
     def metric_fn(cls, masked_lm_example_loss, masked_lm_log_probs, masked_lm_ids,
                   masked_lm_weights, next_sentence_example_loss,
                   next_sentence_log_probs, next_sentence_labels):
-        """Computes the loss and accuracy of the model."""
+        """Computes the loss and accuracy of the models."""
         masked_lm_log_probs = tf.reshape(masked_lm_log_probs,
                                          [-1, masked_lm_log_probs.shape[-1]])
         masked_lm_predictions = tf.argmax(
@@ -222,10 +201,8 @@ class ModelCreator(estimator_creator.ModelCreatorABC):
 
     def create_predict_ops(self):
         return {
-                "sample_id": self.sample_id,
-                "order_id": self.order_id,
-                "code_links": self.code_links,
-            #         "input_ids": self.input_ids,
+        #         "sample_id": self.sample_id,
+        #         "input_ids": self.input_ids,
         #         "input_mask": self.input_mask,
         #         "segment_ids": self.segment_ids,
         # "masked_lm_positions": self.masked_lm_positions,
@@ -234,10 +211,11 @@ class ModelCreator(estimator_creator.ModelCreatorABC):
         # "sentence_ids": self.sentence_ids,
         # "tts_dist": self.tts_dist,
         "next_sentence_labels": self.next_sentence_labels,
-        "next_sentence_log_probs": self.next_sentence_log_probs,
-        "next_sentence_example_loss": self.next_sentence_example_loss,
+        #
         # "embedding_output": self.embedding_output,
-        # "pooled_output": self.pooled_output,
+                "next_sentence_log_probs": self.next_sentence_log_probs,
+                "next_sentence_example_loss": self.next_sentence_example_loss,
+            "pooled_output": self.pooled_output,
         }
 
 
@@ -276,7 +254,7 @@ class ModelConfig(object):
         layers in the embeddings, encoder, and pooler.
       attention_probs_dropout_prob: The dropout ratio for the attention
         probabilities.
-      max_position_embeddings: The maximum sequence length that this model might
+      max_position_embeddings: The maximum sequence length that this models might
         ever be used with. Typically set this to something large just in case
         (e.g., 512 or 1024 or 2048).
       type_vocab_size: The vocabulary size of the `token_type_ids` passed into
@@ -328,7 +306,7 @@ class ModelConfig(object):
 
 
 class BertModel(object):
-  """BERT model ("Bidirectional Encoder Representations from Transformers").
+  """BERT models ("Bidirectional Encoder Representations from Transformers").
 
   Example usage:
 
@@ -341,11 +319,11 @@ class BertModel(object):
   config = modeling.BertConfig(vocab_size=32000, hidden_size=512,
     num_hidden_layers=8, num_attention_heads=6, intermediate_size=1024)
 
-  model = modeling.BertModel(config=config, is_training=True,
+  models = modeling.BertModel(config=config, is_training=True,
     input_ids=input_ids, input_mask=input_mask, token_type_ids=token_type_ids)
 
   label_embeddings = tf.get_variable(...)
-  pooled_output = model.get_pooled_output()
+  pooled_output = models.get_pooled_output()
   logits = tf.matmul(pooled_output, label_embeddings)
   ...
   ```
@@ -365,14 +343,14 @@ class BertModel(object):
 
     Args:
       config: `BertConfig` instance.
-      is_training: bool. true for training model, false for eval model. Controls
+      is_training: bool. true for training models, false for eval models. Controls
         whether dropout will be applied.
       input_ids: int32 Tensor of shape [batch_size, seq_length].
       input_mask: (optional) int32 Tensor of shape [batch_size, seq_length].
       token_type_ids: (optional) int32 Tensor of shape [batch_size, seq_length].
       use_one_hot_embeddings: (optional) bool. Whether to use one-hot word
         embeddings or tf.embedding_lookup() for the word embeddings.
-      scope: (optional) variable scope. Defaults to "bert".
+      scope: (optional) variable scope. Defaults to "models".
 
     Raises:
       ValueError: The config is invalid or one of the input tensor shapes
@@ -393,7 +371,7 @@ class BertModel(object):
     if token_type_ids is None:
       token_type_ids = tf.zeros(shape=[batch_size, seq_length], dtype=tf.int32)
 
-    with tf.variable_scope(scope, default_name="bert"):
+    with tf.variable_scope(scope, default_name="models"):
       with tf.variable_scope("embeddings"):
         # Perform embedding lookup on the word ids.
         (self.embedding_output, self.embedding_table) = embedding_lookup(
@@ -457,7 +435,7 @@ class BertModel(object):
       # (or segment-pair-level) classification tasks where we need a fixed
       # dimensional representation of the segment.
       with tf.variable_scope("pooler"):
-        # We "pool" the model by simply taking the hidden state corresponding
+        # We "pool" the models by simply taking the hidden state corresponding
         # to the first token. We assume that this has been pre-trained
         first_token_tensor = tf.squeeze(self.sequence_output[:, 0:1, :], axis=1)
         self.pooled_output = tf.layers.dense(
@@ -695,7 +673,7 @@ def embedding_postprocessor(input_tensor,
       for positional embeddings.
     initializer_range: float. Range of the weight initialization.
     max_position_embeddings: int. Maximum sequence length that might ever be
-      used with this model. This can be longer than the sequence length of
+      used with this models. This can be longer than the sequence length of
       input_tensor, but cannot be shorter.
     dropout_prob: float. Dropout probability applied to the final output tensor.
 

@@ -34,10 +34,10 @@ from common import util
 from common import tf_util
 
 PARENT_DIR = util.DirUtils.get_parent_dir(__file__, 1)
-# ========= If want to use other model, just need change here ========
-from common import estimator_creator
-from bert import modeling_bert_pretrain as modeling
-model_creator = modeling.ModelCreator(model_name="bert-pretrain")
+# ========= If want to use other models, just need change here ========
+from common import model_builder
+from models import bert_pretrain as modeling
+model_creator = modeling.ModelCreator(model_name="models-pretrain")
 # ====================================================================
 
 flags = tf.flags
@@ -53,10 +53,10 @@ class RunMode(enum.Enum):
 ## ------  Required parameters
 flags.DEFINE_enum("run_mode", RunMode.EVAL.value, [e.value for e in RunMode], "Run this py mode.")
 flags.DEFINE_boolean("use_gpu", False, "If use GPU.")
-flags.DEFINE_string("init_checkpoint", "{}/model_dir/{}".format(PARENT_DIR, model_creator.model_name), "Initial checkpoint (usually from a pre-trained model).")
-flags.DEFINE_string("model_dir", "{}/model_dir/{}".format(PARENT_DIR, model_creator.model_name), "The output directory where the model checkpoints will be written.")
+flags.DEFINE_string("init_checkpoint", "{}/model_dir/{}".format(PARENT_DIR, model_creator.model_name), "Initial checkpoint (usually from a pre-trained models).")
+flags.DEFINE_string("model_dir", "{}/model_dir/{}".format(PARENT_DIR, model_creator.model_name), "The output directory where the models checkpoints will be written.")
 flags.DEFINE_boolean("clear_model_dir", False, "If remove model_dir.")
-flags.DEFINE_integer("save_checkpoints_steps", 1000, "How often to save the model checkpoint.")
+flags.DEFINE_integer("save_checkpoints_steps", 1000, "How often to save the models checkpoint.")
 
 flags.DEFINE_boolean("is_file_patterns", True, "If train_file / eval_file / predict_file is file patterns.")
 # /nfs/project/ethan/nightingale/deeplearning/tfrecord/*.tfrecord
@@ -171,10 +171,10 @@ def main(_):
 
     def get_input_fn_train():
         tf.logging.info("*** Input Files For Train ***")
-        train_dataset_creator = estimator_creator.DataSetCreator(FLAGS.train_file,
-                                                                 is_file_patterns=FLAGS.is_file_patterns,
-                                                                 name_to_features=name_to_features,
-                                                                 data_source=estimator_creator.DataSource.TFRECORD)
+        train_dataset_creator = model_builder.DataSetCreator(FLAGS.train_file,
+                                                             is_file_patterns=FLAGS.is_file_patterns,
+                                                             name_to_features=name_to_features,
+                                                             data_source=model_builder.DataSource.TFRECORD)
 
         train_input_fn = train_dataset_creator.input_fn_builder(batch_size=FLAGS.train_batch_size,
                                                                 epoch=FLAGS.train_epoch,
@@ -184,10 +184,10 @@ def main(_):
 
     def get_input_fn_eval():
         tf.logging.info("*** Input Files For Eval ***")
-        eval_dataset_creator = estimator_creator.DataSetCreator(FLAGS.eval_file,
-                                                                is_file_patterns=FLAGS.is_file_patterns,
-                                                                name_to_features=name_to_features,
-                                                                data_source=estimator_creator.DataSource.TFRECORD)
+        eval_dataset_creator = model_builder.DataSetCreator(FLAGS.eval_file,
+                                                            is_file_patterns=FLAGS.is_file_patterns,
+                                                            name_to_features=name_to_features,
+                                                            data_source=model_builder.DataSource.TFRECORD)
         eval_input_fn = eval_dataset_creator.input_fn_builder(batch_size=FLAGS.train_batch_size,
                                                               epoch=1,
                                                               is_training=False,
@@ -196,10 +196,10 @@ def main(_):
 
     def get_input_fn_predict():
         tf.logging.info("*** Input Files For Predict ***")
-        predict_dataset_creator = estimator_creator.DataSetCreator(FLAGS.predict_file,
-                                                                   is_file_patterns=FLAGS.is_file_patterns,
-                                                                   name_to_features=name_to_features,
-                                                                   data_source=estimator_creator.DataSource.TFRECORD)
+        predict_dataset_creator = model_builder.DataSetCreator(FLAGS.predict_file,
+                                                               is_file_patterns=FLAGS.is_file_patterns,
+                                                               name_to_features=name_to_features,
+                                                               data_source=model_builder.DataSource.TFRECORD)
         predict_input_fn = predict_dataset_creator.input_fn_builder(batch_size=FLAGS.predict_batch_size,
                                                                     epoch=1,
                                                                     is_training=False,

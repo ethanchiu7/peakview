@@ -29,61 +29,77 @@ import enum
 import json
 import numpy as np
 import tensorflow as tf
-tf.logging.set_verbosity(tf.logging.INFO)
 from common import util
 from common import tf_util
 
 PARENT_DIR = util.DirUtils.get_parent_dir(__file__, 1)
-# ========= If want to use other model, just need change here ========
-from common import estimator_creator
-from bert import modeling_bert_finetune as modeling
-model_creator = modeling.ModelCreator(model_name="ngbert-finetune")
+# ========= If want to use other models, just need change here ========
+from common import dataset_builder
+from common import model_builder
+# TODO by Ethan 2021-05-31, 周一, 14:37:
+import importlib
+modellib = importlib.import_module("models.{}".format("bert_finetune"))
+from models import bert_finetune as modeling
+model_creator = modeling.ModelCreator(model_name="bert-finetune")
 # ====================================================================
-
-flags = tf.flags
-FLAGS = flags.FLAGS
 
 
 class RunMode(enum.Enum):
-    TRAIN = "train"
-    EVAL = "eval"
-    TRAIN_WITH_EVAL = "train_with_eval"
-    PREDICT = "predict"
-
-## ------  Required parameters
-flags.DEFINE_enum("run_mode", RunMode.PREDICT.value, [e.value for e in RunMode], "Run this py mode.")
-flags.DEFINE_boolean("use_gpu", False, "If use GPU.")
-flags.DEFINE_string("init_checkpoint", "{}/model_dir/ngbert-pretrain".format(PARENT_DIR, model_creator.model_name), "Initial checkpoint (usually from a pre-trained model).")
-flags.DEFINE_string("model_dir", "{}/model_dir/{}".format(PARENT_DIR, model_creator.model_name), "The output directory where the model checkpoints will be written.")
-flags.DEFINE_boolean("clear_model_dir", False, "If remove model_dir.")
-flags.DEFINE_integer("save_checkpoints_steps", 1000, "How often to save the model checkpoint.")
-
-flags.DEFINE_boolean("is_file_patterns", True, "If train_file / eval_file / predict_file is file patterns.")
-# /nfs/project/ethan/nightingale/deeplearning/tfrecord/*.tfrecord
-flags.DEFINE_string("train_file",
-                    "/Users/didi/PycharmProjects/nightingale/deeplearning/tfrecord/finetune/part-*.tfrecord",
-                    "Input TF example files (can be a glob or comma separated).")
-flags.DEFINE_integer("train_batch_size", 4, "Total batch size for training.")
-flags.DEFINE_integer("train_epoch", 2, "Total number of training epochs to perform.")
+    TRAIN = 0
+    EVAL = 1
+    TRAIN_WITH_EVAL = 2
+    PREDICT = 3
 
 
-flags.DEFINE_string("eval_file",
-                    "/Users/didi/PycharmProjects/nightingale/deeplearning/tfrecord/finetune/part-*.tfrecord",
-                    "Input TF example files (can be a glob or comma separated).")
-flags.DEFINE_integer("eval_batch_size", 8, "Total batch size for eval.")
+class LogVerbosity(enum.Enum):
+    DEBUG = tf.logging.DEBUG
+    INFO = tf.logging.INFO
+    WARN = tf.logging.WARN
+    ERROR = tf.logging.ERROR
+    FATAL = tf.logging.FATAL
 
-flags.DEFINE_string("predict_file",
-                    "/Users/didi/PycharmProjects/nightingale/deeplearning/tfrecord/predict/part-*.tfrecord",
-                    "Input TF example files (can be a glob or comma separated).")
-flags.DEFINE_integer("predict_batch_size", 10, "Total batch size for predict.")
-flags.DEFINE_integer("num_actual_predict_examples", 10, "The num of examples during predict mode.")
 
-# learning rate polynomial_decay
-flags.DEFINE_float("learning_rate", 0.005, "The initial learning rate for Adam.")
-flags.DEFINE_integer("decay_steps", 2000, "polynomial_decay args : decay_steps")
-flags.DEFINE_float("end_learning_rate", 0.0001, "polynomial_decay args : end_learning_rate")
-flags.DEFINE_float("decay_pow", 1.0, "polynomial_decay args : power")
-flags.DEFINE_integer("warmup_steps", 1000, "polynomial_decay args : decay_steps")
+def define_flags():
+    ## ------  Required parameters
+    flags.DEFINE_enum("run_mode", RunMode.PREDICT.name, [e.name for e in RunMode], "Run this py mode, TRAIN/EVAL/TRAIN_WITH_EVAL/PREDICT")
+    flags.DEFINE_enum("log_verbosity", LogVerbosity.INFO.value, [e.name for e in LogVerbosity],
+                      "tf logging set_verbosity, DEBUG/INFO/WARN/ERROR/FATAL")
+    flags.DEFINE_boolean("use_gpu", False, "If use GPU.")
+
+    flags.DEFINE_string("model_builder", "models.bert_finetune", "define how to build current models")
+
+    flags.DEFINE_string("init_checkpoint", "{}/model_dir/ngbert-pretrain".format(PARENT_DIR, model_creator.model_name),
+                        "Initial checkpoint (usually from a pre-trained models).")
+    flags.DEFINE_string("model_dir", "{}/model_dir/{}".format(PARENT_DIR, model_creator.model_name),
+                        "The output directory where the models checkpoints will be written.")
+    flags.DEFINE_boolean("clear_model_dir", False, "If remove model_dir.")
+    flags.DEFINE_integer("save_checkpoints_steps", 1000, "How often to save the models checkpoint.")
+
+    flags.DEFINE_boolean("is_file_patterns", True, "If train_file / eval_file / predict_file is file patterns.")
+    # /nfs/project/ethan/nightingale/deeplearning/tfrecord/*.tfrecord
+    flags.DEFINE_string("train_file",
+                        "/Users/didi/PycharmProjects/nightingale/deeplearning/tfrecord/finetune/part-*.tfrecord",
+                        "Input TF example files (can be a glob or comma separated).")
+    flags.DEFINE_integer("train_batch_size", 4, "Total batch size for training.")
+    flags.DEFINE_integer("train_epoch", 2, "Total number of training epochs to perform.")
+
+    flags.DEFINE_string("eval_file",
+                        "/Users/didi/PycharmProjects/nightingale/deeplearning/tfrecord/finetune/part-*.tfrecord",
+                        "Input TF example files (can be a glob or comma separated).")
+    flags.DEFINE_integer("eval_batch_size", 8, "Total batch size for eval.")
+
+    flags.DEFINE_string("predict_file",
+                        "/Users/didi/PycharmProjects/nightingale/deeplearning/tfrecord/predict/part-*.tfrecord",
+                        "Input TF example files (can be a glob or comma separated).")
+    flags.DEFINE_integer("predict_batch_size", 10, "Total batch size for predict.")
+    flags.DEFINE_integer("num_actual_predict_examples", 10, "The num of examples during predict mode.")
+
+    # learning rate polynomial_decay
+    flags.DEFINE_float("learning_rate", 0.005, "The initial learning rate for Adam.")
+    flags.DEFINE_integer("decay_steps", 2000, "polynomial_decay args : decay_steps")
+    flags.DEFINE_float("end_learning_rate", 0.0001, "polynomial_decay args : end_learning_rate")
+    flags.DEFINE_float("decay_pow", 1.0, "polynomial_decay args : power")
+    flags.DEFINE_integer("warmup_steps", 1000, "polynomial_decay args : decay_steps")
 
 
 def model_fn_builder(init_checkpoint, learning_rate, decay_steps, end_learning_rate, decay_pow, warmup_steps, use_tpu=False):
@@ -179,10 +195,10 @@ def main(_):
 
     def get_input_fn_train():
         tf.logging.info("*** Input Files For Train ***")
-        train_dataset_creator = estimator_creator.DataSetCreator(FLAGS.train_file,
-                                                                 is_file_patterns=FLAGS.is_file_patterns,
-                                                                 name_to_features=name_to_features,
-                                                                 data_source=estimator_creator.DataSource.TFRECORD)
+        train_dataset_creator = dataset_builder.DataSetCreator(FLAGS.train_file,
+                                                             is_file_patterns=FLAGS.is_file_patterns,
+                                                             name_to_features=name_to_features,
+                                                             data_source=dataset_builder.DataSource.TFRECORD)
 
         train_input_fn = train_dataset_creator.input_fn_builder(batch_size=FLAGS.train_batch_size,
                                                                 epoch=FLAGS.train_epoch,
@@ -192,10 +208,10 @@ def main(_):
 
     def get_input_fn_eval():
         tf.logging.info("*** Input Files For Eval ***")
-        eval_dataset_creator = estimator_creator.DataSetCreator(FLAGS.eval_file,
-                                                                is_file_patterns=FLAGS.is_file_patterns,
-                                                                name_to_features=name_to_features,
-                                                                data_source=estimator_creator.DataSource.TFRECORD)
+        eval_dataset_creator = dataset_builder.DataSetCreator(FLAGS.eval_file,
+                                                            is_file_patterns=FLAGS.is_file_patterns,
+                                                            name_to_features=name_to_features,
+                                                            data_source=dataset_builder.DataSource.TFRECORD)
         eval_input_fn = eval_dataset_creator.input_fn_builder(batch_size=FLAGS.train_batch_size,
                                                               epoch=1,
                                                               is_training=False,
@@ -204,10 +220,10 @@ def main(_):
 
     def get_input_fn_predict():
         tf.logging.info("*** Input Files For Predict ***")
-        predict_dataset_creator = estimator_creator.DataSetCreator(FLAGS.predict_file,
-                                                                   is_file_patterns=FLAGS.is_file_patterns,
-                                                                   name_to_features=name_to_features,
-                                                                   data_source=estimator_creator.DataSource.TFRECORD)
+        predict_dataset_creator = dataset_builder.DataSetCreator(FLAGS.predict_file,
+                                                               is_file_patterns=FLAGS.is_file_patterns,
+                                                               name_to_features=name_to_features,
+                                                               data_source=dataset_builder.DataSource.TFRECORD)
         predict_input_fn = predict_dataset_creator.input_fn_builder(batch_size=FLAGS.predict_batch_size,
                                                                     epoch=1,
                                                                     is_training=False,
@@ -255,7 +271,7 @@ def main(_):
         warm_start_from=None)
 
     # do_train
-    if FLAGS.run_mode == RunMode.TRAIN.value:
+    if FLAGS.run_mode == RunMode.TRAIN.name:
         input_fn_train = get_input_fn_train()
         tf.logging.info("***** Running training *****")
         tf.logging.info("  Batch size = %d", FLAGS.train_batch_size)
@@ -263,14 +279,14 @@ def main(_):
 
     # do_eval
     output_eval_file = os.path.join(FLAGS.model_dir, "eval_results.txt")
-    if FLAGS.run_mode == RunMode.EVAL.value:
+    if FLAGS.run_mode == RunMode.EVAL.name:
         tf.logging.info("***** Running evaluation *****")
         tf.logging.info("  Batch size = %d", FLAGS.eval_batch_size)
         result = estimator.evaluate(input_fn=get_input_fn_eval())
         tf_util.write_eval_result(result, output_eval_file)
 
     # do_train_with_eval
-    if FLAGS.run_mode == RunMode.TRAIN_WITH_EVAL.value:
+    if FLAGS.run_mode == RunMode.TRAIN_WITH_EVAL.name:
         tf.logging.info("***** Running training with evaluation *****")
         tf.logging.info("  Batch size = %d", FLAGS.eval_batch_size)
         train_spec = tf.estimator.TrainSpec(input_fn=get_input_fn_train())
@@ -280,7 +296,7 @@ def main(_):
 
     # do_predict
     output_predict_file = os.path.join(FLAGS.model_dir, "predict_results.txt")
-    if FLAGS.run_mode == RunMode.PREDICT.value:
+    if FLAGS.run_mode == RunMode.PREDICT.name:
         tf.logging.info("***** Running prediction *****")
         tf.logging.info("  Batch size = %d", FLAGS.eval_batch_size)
         predict_result_it = estimator.predict(input_fn=get_input_fn_predict(), yield_single_examples=True)
@@ -291,5 +307,9 @@ def main(_):
 
 
 if __name__ == "__main__":
+    define_flags()
+    flags = tf.flags
+    FLAGS = flags.FLAGS
+    tf.logging.set_verbosity(LogVerbosity[FLAGS.log_verbosity].value)
     tf.app.run()
 
