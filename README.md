@@ -21,6 +21,8 @@
 
 关注微信公众号，获取更多 和 最新信息
 
+![image](https://github.com/ethanchiu7/peakview/blob/main/img/peakview-weixin.jpg)
+
 * 高质量
 * 高复用
 * 高性能
