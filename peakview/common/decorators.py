@@ -6,7 +6,6 @@
     Suggestion  ：
     Description :
     File    :   decorators.py
-    Software    :   PyCharm
 """
 from absl import flags
 from absl import app as absl_app

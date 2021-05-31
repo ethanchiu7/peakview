@@ -1,18 +1,13 @@
-# coding=utf-8
-# Copyright 2018 The Google AI Language Team Authors.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-"""The main BERT models and related functions."""
+# -*- coding: utf-8 -*-
+"""
+    Author  ：   Ethan Chiu
+    Time    ：   2021/3/30 下午12:15
+    Site    :
+    Suggestion  ：
+    Description : The main BERT models and related functions.
+    File    :   model_builder.py
+    Based on Tensorflow 1.14
+"""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -26,215 +21,17 @@ import re
 import numpy as np
 import six
 import tensorflow as tf
-from common import model_builder
 from common import tf_util
 
-
-class ModelCreator(model_builder.ModelCreatorABC):
-    def __init__(self, model_name):
-        super().__init__(model_name)
-        self.model = None
-        self.probabilities = None
-        self.next_sentence_example_loss = None
-        self.next_sentence_log_probs = None
-        self.next_sentence_labels = None
-
-        self.input_ids = None
-        self.input_mask = None
-        self.segment_ids = None
-        self.masked_lm_positions = None
-        self.masked_lm_ids = None
-        self.masked_lm_weights = None
-        self.next_sentence_labels = None
-
-        self.sentence_ids = None
-        self.tts_dist = None
-        self.sample_id = None
-        self.order_id = None
-        self.code_links = None
-
-        self.embedding_output = None
-
-    def get_model_conf(self):
-        dist_bucket_boundaries = [float(i) for i in range(0, 501) if i % 5 == 0]
-        model_config = ModelConfig(vocab_size=10000, num_labels=2, max_position_embeddings=128,
-                                   hidden_size=768, num_hidden_layers=12, num_attention_heads=12,
-                                   max_sentence_len=6, dist_bucket_boundaries=dist_bucket_boundaries, type_vocab_size=3,
-                                   max_predictions_per_seq=15)
-        return model_config
-
-    def get_name_to_features(self):
-        model_conf = self.get_model_conf()
-        # name_to_features = {
-        #     "input_ids": tf.io.FixedLenFeature([model_conf.max_position_embeddings], tf.int64),
-        #     "input_mask": tf.io.FixedLenFeature([model_conf.max_position_embeddings], tf.int64),
-        #     "sentence_ids": tf.io.FixedLenFeature([model_conf.max_position_embeddings], tf.int64),
-        #     "tts_dist": tf.io.FixedLenFeature([model_conf.max_position_embeddings], tf.float32),
-        #     "segment_ids": tf.io.FixedLenFeature([model_conf.max_position_embeddings], tf.int64),
-        #     "label": tf.io.FixedLenFeature([], tf.int64),
-        #     "sample_id": tf.io.FixedLenFeature([], tf.int64)
-        # }
-        name_to_features = {
-            "input_ids": tf.io.FixedLenFeature([model_conf.max_position_embeddings], tf.int64),
-            "input_mask": tf.io.FixedLenFeature([model_conf.max_position_embeddings], tf.int64),
-            "segment_ids": tf.io.FixedLenFeature([model_conf.max_position_embeddings], tf.int64),
-
-            "masked_lm_positions": tf.io.FixedLenFeature([model_conf.max_predictions_per_seq], tf.int64),
-            "masked_lm_ids": tf.io.FixedLenFeature([model_conf.max_predictions_per_seq], tf.int64),
-            "masked_lm_weights": tf.io.FixedLenFeature([model_conf.max_predictions_per_seq], tf.float32),
-            "next_sentence_labels": tf.io.FixedLenFeature([], tf.int64),
-
-            "sentence_ids": tf.io.FixedLenFeature([model_conf.max_position_embeddings], tf.int64),
-            "tts_dist": tf.io.FixedLenFeature([model_conf.max_position_embeddings], tf.float32),
-            "sample_id": tf.io.FixedLenFeature([], tf.int64),
-            "order_id": tf.io.FixedLenFeature([], tf.string),
-            "code_links": tf.io.FixedLenFeature([], tf.string)
-        }
-        return name_to_features
-
-    def create_model(self, features, labels, is_training):
-        """Creates a classification models."""
-        tf.logging.info("[create_model] creating ...")
-        model_config = self.get_model_conf()
-        use_tpu = False
-        use_one_hot_embeddings = False
-
-        self.input_ids = features["input_ids"]
-        self.input_mask = features["input_mask"]
-        self.segment_ids = features["segment_ids"]
-        self.masked_lm_positions = features["masked_lm_positions"]
-        self.masked_lm_ids = features["masked_lm_ids"]
-        self.masked_lm_weights = features["masked_lm_weights"]
-        next_sentence_labels = features["next_sentence_labels"]
-        next_sentence_labels = tf.cast(next_sentence_labels, tf.float32)
-        self.next_sentence_labels = next_sentence_labels
-
-        self.sentence_ids = features["sentence_ids"]
-        self.tts_dist = features["tts_dist"]
-        self.sample_id = features["sample_id"]
-        self.order_id = features["order_id"]
-        self.code_links = features["code_links"]
-
-        model = BertModel(
-            config=model_config,
-            is_training=is_training,
-            input_ids=self.input_ids,
-            input_mask=self.input_mask,
-            sentence_ids=self.sentence_ids,
-            tts_dist=self.tts_dist,
-            token_type_ids=self.segment_ids,
-            use_one_hot_embeddings=use_one_hot_embeddings)
-        self.model = model
-
-        (masked_lm_loss,
-         masked_lm_example_loss, masked_lm_log_probs) = get_masked_lm_output(
-            model_config, model.get_sequence_output(), model.get_embedding_table(),
-            self.masked_lm_positions, self.masked_lm_ids, self.masked_lm_weights)
-
-        (next_sentence_loss, next_sentence_example_loss,
-         next_sentence_log_probs) = get_next_sentence_output(
-            model_config, model.get_pooled_output(), next_sentence_labels)
-        self.pooled_output = model.get_pooled_output()
-        self.next_sentence_example_loss = next_sentence_example_loss
-        self.next_sentence_log_probs = next_sentence_log_probs
-
-        # batch_mean_loss = masked_lm_loss + next_sentence_loss
-        batch_mean_loss = next_sentence_loss
-        # batch_item_loss = masked_lm_example_loss + next_sentence_example_loss
-        batch_item_loss = next_sentence_example_loss
-        # TODO by Ethan 2021-04-22, 周四, 22:23:  create_train_scalars
-        tf.summary.scalar("next_sentence_loss", next_sentence_loss)
-        tf.summary.scalar("next_sentence_accuracy",
-                          tf_util.batch_accuracy_binary(next_sentence_log_probs, next_sentence_labels))
-        return (labels,
-                masked_lm_example_loss, masked_lm_log_probs, self.masked_lm_ids, self.masked_lm_weights,
-                next_sentence_example_loss, next_sentence_log_probs, next_sentence_labels,
-                batch_mean_loss, batch_item_loss)
-
-    @classmethod
-    def create_train_op(cls, loss, init_lr, num_decay_steps, end_learning_rate, decay_pow, num_warmup_steps, use_tpu=False):
-        """Creates an optimizer training op."""
-        global_step = tf.train.get_or_create_global_step()
-        learning_rate = cls._decay_warmup_lr(global_step, init_lr, num_decay_steps, end_learning_rate, decay_pow,
-                                             num_warmup_steps)
-
-        optimizer = tf.train.AdamOptimizer(learning_rate=5e-5)
-
-        if use_tpu:
-            optimizer = tf.contrib.tpu.CrossShardOptimizer(optimizer)
-
-        tvars = tf.trainable_variables()
-        grads = tf.gradients(loss, tvars)
-
-        # This is how the models was pre-trained.
-        (grads, _) = tf.clip_by_global_norm(grads, clip_norm=1.0)
-
-        train_op = optimizer.apply_gradients(zip(grads, tvars), global_step=global_step)
-
-        # Normally the global step update is done inside of `apply_gradients`.
-        # However, `AdamWeightDecayOptimizer` doesn't do this. But if you use
-        # a different optimizer, you should probably take this line out.
-        # new_global_step = global_step + 1
-        # train_op = tf.group(train_op, [global_step.assign(new_global_step)])
-        return train_op
-
-    def metric_fn(cls, masked_lm_example_loss, masked_lm_log_probs, masked_lm_ids,
-                  masked_lm_weights, next_sentence_example_loss,
-                  next_sentence_log_probs, next_sentence_labels):
-        """Computes the loss and accuracy of the models."""
-        masked_lm_log_probs = tf.reshape(masked_lm_log_probs,
-                                         [-1, masked_lm_log_probs.shape[-1]])
-        masked_lm_predictions = tf.argmax(
-            masked_lm_log_probs, axis=-1, output_type=tf.int32)
-        masked_lm_example_loss = tf.reshape(masked_lm_example_loss, [-1])
-        masked_lm_ids = tf.reshape(masked_lm_ids, [-1])
-        masked_lm_weights = tf.reshape(masked_lm_weights, [-1])
-        masked_lm_accuracy = tf.metrics.accuracy(
-            labels=masked_lm_ids,
-            predictions=masked_lm_predictions,
-            weights=masked_lm_weights)
-        masked_lm_mean_loss = tf.metrics.mean(
-            values=masked_lm_example_loss, weights=masked_lm_weights)
-
-        next_sentence_predictions = tf.cast(next_sentence_log_probs >= 0.5, tf.int32)
-        next_sentence_accuracy = tf.metrics.accuracy(
-            labels=next_sentence_labels, predictions=next_sentence_predictions)
-        next_sentence_mean_loss = tf.metrics.mean(
-            values=next_sentence_example_loss)
-
-        return {
-            "masked_lm_accuracy": masked_lm_accuracy,
-            "masked_lm_loss": masked_lm_mean_loss,
-            "next_sentence_accuracy": next_sentence_accuracy,
-            "next_sentence_loss": next_sentence_mean_loss,
-        }
-
-    def create_predict_ops(self):
-        return {
-                "sample_id": self.sample_id,
-                "order_id": self.order_id,
-                "code_links": self.code_links,
-            #         "input_ids": self.input_ids,
-        #         "input_mask": self.input_mask,
-        #         "segment_ids": self.segment_ids,
-        # "masked_lm_positions": self.masked_lm_positions,
-        # "masked_lm_ids": self.masked_lm_ids,
-        # "masked_lm_weights": self.masked_lm_weights,
-        # "sentence_ids": self.sentence_ids,
-        # "tts_dist": self.tts_dist,
-        "next_sentence_labels": self.next_sentence_labels,
-        "next_sentence_log_probs": self.next_sentence_log_probs,
-        "next_sentence_example_loss": self.next_sentence_example_loss,
-        # "embedding_output": self.embedding_output,
-        # "pooled_output": self.pooled_output,
-        }
+from common import model_builder
+from common import model_config
 
 
-class ModelConfig(object):
+class NetworkConfig(model_config.NetworkConfig):
   """Configuration for `BertModel`."""
 
   def __init__(self,
-               vocab_size,
+               vocab_size=512,
                num_labels=2,
                max_sentence_len=128,
                dist_bucket_boundaries=None,
@@ -291,29 +88,208 @@ class ModelConfig(object):
     self.initializer_range = initializer_range
     self.max_predictions_per_seq = max_predictions_per_seq
 
-  @classmethod
-  def from_dict(cls, json_object):
-    """Constructs a `BertConfig` from a Python dictionary of parameters."""
-    config = ModelConfig(vocab_size=None)
-    for (key, value) in six.iteritems(json_object):
-      config.__dict__[key] = value
-    return config
 
-  @classmethod
-  def from_json_file(cls, json_file):
-    """Constructs a `BertConfig` from a json file of parameters."""
-    with tf.gfile.GFile(json_file, "r") as reader:
-      text = reader.read()
-    return cls.from_dict(json.loads(text))
+class RunningConfig(model_config.RunningConfig):
+    def __init__(self):
+        super(RunningConfig, self).__init__()
 
-  def to_dict(self):
-    """Serializes this instance to a Python dictionary."""
-    output = copy.deepcopy(self.__dict__)
-    return output
 
-  def to_json_string(self):
-    """Serializes this instance to a JSON string."""
-    return json.dumps(self.to_dict(), indent=2, sort_keys=True) + "\n"
+class ModelBuilder(model_builder.ModelBuilder):
+    def __init__(self):
+        super().__init__()
+        self.model = None
+        self.probabilities = None
+        self.next_sentence_example_loss = None
+        self.next_sentence_log_probs = None
+        self.next_sentence_labels = None
+
+        self.input_ids = None
+        self.input_mask = None
+        self.segment_ids = None
+        self.masked_lm_positions = None
+        self.masked_lm_ids = None
+        self.masked_lm_weights = None
+        self.next_sentence_labels = None
+
+        self.sentence_ids = None
+        self.tts_dist = None
+        self.sample_id = None
+        self.order_id = None
+        self.code_links = None
+
+        self.embedding_output = None
+
+    def get_model_conf(self):
+        dist_bucket_boundaries = [float(i) for i in range(0, 501) if i % 5 == 0]
+        model_config = NetworkConfig(vocab_size=10000, num_labels=2, max_position_embeddings=128,
+                                     hidden_size=768, num_hidden_layers=12, num_attention_heads=12,
+                                     max_sentence_len=6, dist_bucket_boundaries=dist_bucket_boundaries, type_vocab_size=3,
+                                     max_predictions_per_seq=15)
+        return model_config
+
+    def get_name_to_features(self):
+        model_conf = self.get_model_conf()
+        name_to_features = {
+            "input_ids": tf.io.FixedLenFeature([model_conf.max_position_embeddings], tf.int64),
+            "input_mask": tf.io.FixedLenFeature([model_conf.max_position_embeddings], tf.int64),
+            "sentence_ids": tf.io.FixedLenFeature([model_conf.max_position_embeddings], tf.int64),
+            "tts_dist": tf.io.FixedLenFeature([model_conf.max_position_embeddings], tf.float32),
+            "segment_ids": tf.io.FixedLenFeature([model_conf.max_position_embeddings], tf.int64),
+            "label": tf.io.FixedLenFeature([], tf.int64),
+            "sample_id": tf.io.FixedLenFeature([], tf.int64)
+        }
+
+        return name_to_features
+
+    def create_model(self, features, labels, is_training):
+        """Creates a classification models."""
+        tf.logging.info("[create_model] creating ...")
+        model_config = self.get_model_conf()
+        use_tpu = False
+        use_one_hot_embeddings = False
+
+        self.input_ids = features["input_ids"]
+        self.input_mask = features["input_mask"]
+        self.segment_ids = features["segment_ids"]
+        self.masked_lm_positions = features["masked_lm_positions"]
+        self.masked_lm_ids = features["masked_lm_ids"]
+        self.masked_lm_weights = features["masked_lm_weights"]
+        next_sentence_labels = features["next_sentence_labels"]
+        next_sentence_labels = tf.cast(next_sentence_labels, tf.float32)
+        self.next_sentence_labels = next_sentence_labels
+
+        self.sentence_ids = features["sentence_ids"]
+        self.tts_dist = features["tts_dist"]
+        self.sample_id = features["sample_id"]
+        self.order_id = features["order_id"]
+        self.code_links = features["code_links"]
+
+        model = BertModel(
+            config=model_config,
+            is_training=is_training,
+            input_ids=self.input_ids,
+            input_mask=self.input_mask,
+            sentence_ids=self.sentence_ids,
+            tts_dist=self.tts_dist,
+            token_type_ids=self.segment_ids,
+            use_one_hot_embeddings=use_one_hot_embeddings)
+        self.model = model
+
+        (masked_lm_loss,
+         masked_lm_example_loss, masked_lm_log_probs) = get_masked_lm_output(
+            model_config, model.get_sequence_output(), model.get_embedding_table(),
+            self.masked_lm_positions, self.masked_lm_ids, self.masked_lm_weights)
+
+        (next_sentence_loss, next_sentence_example_loss,
+         next_sentence_log_probs) = get_next_sentence_output(
+            model_config, model.get_pooled_output(), next_sentence_labels)
+        self.pooled_output = model.get_pooled_output()
+        self.next_sentence_example_loss = next_sentence_example_loss
+        self.next_sentence_log_probs = next_sentence_log_probs
+
+        # batch_mean_loss = masked_lm_loss + next_sentence_loss
+        batch_mean_loss = next_sentence_loss
+        # batch_item_loss = masked_lm_example_loss + next_sentence_example_loss
+        batch_item_loss = next_sentence_example_loss
+        tf.summary.scalar("next_sentence_loss", next_sentence_loss)
+        tf.summary.scalar("next_sentence_accuracy",
+                          tf_util.batch_accuracy_binary(next_sentence_log_probs, next_sentence_labels))
+        self.labels = labels
+        self.masked_lm_example_loss = masked_lm_example_loss
+        self.masked_lm_log_probs = masked_lm_log_probs
+        self.next_sentence_example_loss = next_sentence_example_loss
+        self.next_sentence_log_probs = next_sentence_log_probs
+        self.next_sentence_labels = next_sentence_labels
+        self.batch_mean_loss = batch_mean_loss
+        return (labels,
+                masked_lm_example_loss, masked_lm_log_probs, self.masked_lm_ids, self.masked_lm_weights,
+                next_sentence_example_loss, next_sentence_log_probs, next_sentence_labels,
+                batch_mean_loss, batch_item_loss)
+
+    def get_train_op(self):
+        """Creates an optimizer training op."""
+        global_step = tf.train.get_or_create_global_step()
+        # learning_rate = cls._decay_warmup_lr(global_step, init_lr, num_decay_steps, end_learning_rate, decay_pow,
+        #                                      num_warmup_steps)
+
+        optimizer = tf.train.AdamOptimizer(learning_rate=5e-5)
+
+        tvars = tf.trainable_variables()
+        grads = tf.gradients(self.batch_mean_loss, tvars)
+
+        # This is how the models was pre-trained.
+        (grads, _) = tf.clip_by_global_norm(grads, clip_norm=1.0)
+
+        train_op = optimizer.apply_gradients(zip(grads, tvars), global_step=global_step)
+
+        # Normally the global step update is done inside of `apply_gradients`.
+        # However, `AdamWeightDecayOptimizer` doesn't do this. But if you use
+        # a different optimizer, you should probably take this line out.
+        # new_global_step = global_step + 1
+        # train_op = tf.group(train_op, [global_step.assign(new_global_step)])
+        self.train_op = train_op
+        return train_op
+
+    def get_metric_ops(self):
+        """Computes the loss and accuracy of the models."""
+        masked_lm_log_probs = tf.reshape(self.masked_lm_log_probs,
+                                         [-1, self.masked_lm_log_probs.shape[-1]])
+        masked_lm_predictions = tf.argmax(
+            masked_lm_log_probs, axis=-1, output_type=tf.int32)
+        masked_lm_example_loss = tf.reshape(self.masked_lm_example_loss, [-1])
+        masked_lm_ids = tf.reshape(self.masked_lm_ids, [-1])
+        masked_lm_weights = tf.reshape(self.masked_lm_weights, [-1])
+        masked_lm_accuracy = tf.metrics.accuracy(
+            labels=masked_lm_ids,
+            predictions=masked_lm_predictions,
+            weights=masked_lm_weights)
+        masked_lm_mean_loss = tf.metrics.mean(
+            values=masked_lm_example_loss, weights=masked_lm_weights)
+
+        next_sentence_predictions = tf.cast(self.next_sentence_log_probs >= 0.5, tf.int32)
+        next_sentence_accuracy = tf.metrics.accuracy(
+            labels=self.next_sentence_labels, predictions=next_sentence_predictions)
+        next_sentence_mean_loss = tf.metrics.mean(
+            values=self.next_sentence_example_loss)
+
+        return {
+            "masked_lm_accuracy": masked_lm_accuracy,
+            "masked_lm_loss": masked_lm_mean_loss,
+            "next_sentence_accuracy": next_sentence_accuracy,
+            "next_sentence_loss": next_sentence_mean_loss,
+        }
+
+
+    def get_predict_ops(self):
+        return {
+                "sample_id": self.sample_id,
+                "order_id": self.order_id,
+                "code_links": self.code_links,
+            #         "input_ids": self.input_ids,
+        #         "input_mask": self.input_mask,
+        #         "segment_ids": self.segment_ids,
+        # "masked_lm_positions": self.masked_lm_positions,
+        # "masked_lm_ids": self.masked_lm_ids,
+        # "masked_lm_weights": self.masked_lm_weights,
+        # "sentence_ids": self.sentence_ids,
+        # "tts_dist": self.tts_dist,
+        "next_sentence_labels": self.next_sentence_labels,
+        "next_sentence_log_probs": self.next_sentence_log_probs,
+        "next_sentence_example_loss": self.next_sentence_example_loss,
+        # "embedding_output": self.embedding_output,
+        # "pooled_output": self.pooled_output,
+        }
+
+    def get_training_hooks(self):
+        training_hooks = [
+            tf.train.LoggingTensorHook({"next_sentence_accuracy": tf_util.batch_accuracy_binary(
+                self.next_sentence_log_probs, self.next_sentence_labels),
+                                        "batch_mean_loss": self.batch_mean_loss
+                                        }, every_n_iter=100)
+        ]
+        return training_hooks
+
+
 
 
 class BertModel(object):
@@ -341,7 +317,7 @@ class BertModel(object):
   """
 
   def __init__(self,
-               config: ModelConfig,
+               config: NetworkConfig,
                is_training,
                input_ids,
                input_mask=None,
@@ -1218,7 +1194,7 @@ def assert_rank(tensor, expected_rank, name=None):
         (name, scope_name, actual_rank, str(tensor.shape), str(expected_rank)))
 
 
-def get_masked_lm_output(bert_config: ModelConfig, input_tensor, output_weights, positions,
+def get_masked_lm_output(bert_config: NetworkConfig, input_tensor, output_weights, positions,
                          label_ids, label_weights):
   """Get loss and log probs for the masked LM."""
   input_tensor = gather_indexes(input_tensor, positions)
@@ -1263,7 +1239,7 @@ def get_masked_lm_output(bert_config: ModelConfig, input_tensor, output_weights,
   return (loss, per_example_loss, log_probs)
 
 
-def get_next_sentence_output(bert_config: ModelConfig, input_tensor, labels):
+def get_next_sentence_output(bert_config: NetworkConfig, input_tensor, labels):
   """Get loss and log probs for the next sentence prediction."""
 
   # Simple binary classification. Note that 0 is "next sentence" and 1 is

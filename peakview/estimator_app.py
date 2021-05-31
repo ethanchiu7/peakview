@@ -1,21 +1,12 @@
-# coding=utf-8
-# Copyright 2018 The Google AI Language Team Authors.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# -*- coding: utf-8 -*-
 """
-Alpha Estimator
-Athor By Ethan Chiu
-Based on BERT finetuning runner, Tensorflow 1.14
+    Author  ：   Ethan Chiu
+    Time    ：   2021/3/30 下午12:15
+    Site    :
+    Suggestion  ：
+    Description :
+    File    :   model_builder.py
+    Based on Tensorflow 1.14
 """
 
 from __future__ import absolute_import
@@ -33,14 +24,18 @@ from common import util
 from common import tf_util
 
 PARENT_DIR = util.DirUtils.get_parent_dir(__file__, 1)
-# ========= If want to use other models, just need change here ========
 from common import dataset_builder
-from common import model_builder
+# from common import model_builder
+
 # TODO by Ethan 2021-05-31, 周一, 14:37:
-import importlib
-modellib = importlib.import_module("models.{}".format("bert_finetune"))
+# ========= If want to use other models, just need change here ========
 from models import bert_finetune as modeling
-model_creator = modeling.ModelCreator(model_name="bert-finetune")
+running_config = modeling.RunningConfig()
+network_config = modeling.NetworkConfig()
+model_builder = modeling.ModelBuilder()
+# ====================================================================
+# import importlib
+# modellib = importlib.import_module("models.{}".format("bert_finetune"))
 # ====================================================================
 
 
@@ -68,34 +63,29 @@ def define_flags():
 
     flags.DEFINE_string("model_builder", "models.bert_finetune", "define how to build current models")
 
-    flags.DEFINE_string("init_checkpoint", "{}/model_dir/ngbert-pretrain".format(PARENT_DIR, model_creator.model_name),
-                        "Initial checkpoint (usually from a pre-trained models).")
-    flags.DEFINE_string("model_dir", "{}/model_dir/{}".format(PARENT_DIR, model_creator.model_name),
+    flags.DEFINE_string("model_dir", "{}/model_dir/{}".format(PARENT_DIR, running_config.model_name),
                         "The output directory where the models checkpoints will be written.")
-    flags.DEFINE_boolean("clear_model_dir", False, "If remove model_dir.")
-    flags.DEFINE_integer("save_checkpoints_steps", 1000, "How often to save the models checkpoint.")
+    flags.DEFINE_string("init_checkpoint", "{}/model_dir/{}".format(PARENT_DIR, running_config.model_name),
+                        "Initial checkpoint (usually from a pre-trained models).")
+
+    flags.DEFINE_boolean("clear_model_dir", running_config.clear_model_dir, "If remove model_dir.")
+    flags.DEFINE_integer("save_checkpoints_steps", running_config.save_checkpoints_steps, "How often to save the models checkpoint.")
 
     flags.DEFINE_boolean("is_file_patterns", True, "If train_file / eval_file / predict_file is file patterns.")
     # /nfs/project/ethan/nightingale/deeplearning/tfrecord/*.tfrecord
-    flags.DEFINE_string("train_file",
-                        "/Users/didi/PycharmProjects/nightingale/deeplearning/tfrecord/finetune/part-*.tfrecord",
-                        "Input TF example files (can be a glob or comma separated).")
+    flags.DEFINE_string("train_file", running_config.train_file, "Input TF example files (can be a glob or comma separated).")
     flags.DEFINE_integer("train_batch_size", 4, "Total batch size for training.")
     flags.DEFINE_integer("train_epoch", 2, "Total number of training epochs to perform.")
 
-    flags.DEFINE_string("eval_file",
-                        "/Users/didi/PycharmProjects/nightingale/deeplearning/tfrecord/finetune/part-*.tfrecord",
-                        "Input TF example files (can be a glob or comma separated).")
+    flags.DEFINE_string("eval_file", running_config.eval_file, "Input TF example files (can be a glob or comma separated).")
     flags.DEFINE_integer("eval_batch_size", 8, "Total batch size for eval.")
 
-    flags.DEFINE_string("predict_file",
-                        "/Users/didi/PycharmProjects/nightingale/deeplearning/tfrecord/predict/part-*.tfrecord",
-                        "Input TF example files (can be a glob or comma separated).")
+    flags.DEFINE_string("predict_file", running_config.predict_file,"Input TF example files (can be a glob or comma separated).")
     flags.DEFINE_integer("predict_batch_size", 10, "Total batch size for predict.")
     flags.DEFINE_integer("num_actual_predict_examples", 10, "The num of examples during predict mode.")
 
     # learning rate polynomial_decay
-    flags.DEFINE_float("learning_rate", 0.005, "The initial learning rate for Adam.")
+    flags.DEFINE_float("learning_rate", running_config.learning_rate, "The initial learning rate for Adam.")
     flags.DEFINE_integer("decay_steps", 2000, "polynomial_decay args : decay_steps")
     flags.DEFINE_float("end_learning_rate", 0.0001, "polynomial_decay args : end_learning_rate")
     flags.DEFINE_float("decay_pow", 1.0, "polynomial_decay args : power")
@@ -103,7 +93,7 @@ def define_flags():
 
 
 def model_fn_builder(init_checkpoint, learning_rate, decay_steps, end_learning_rate, decay_pow, warmup_steps, use_tpu=False):
-  """Returns `model_fn` closure for TPUEstimator."""
+  """Returns `model_fn` closure for GPUEstimator."""
   is_real_example = 1
 
   def model_fn(features, labels, mode, params, config):
@@ -134,10 +124,7 @@ def model_fn_builder(init_checkpoint, learning_rate, decay_steps, end_learning_r
       tf.logging.info("****** %s ******  name = %s, shape = %s" % (log_prefix, name, features[name].shape))
 
     is_training = (mode == tf.estimator.ModeKeys.TRAIN)
-    (labels,
-     masked_lm_example_loss, masked_lm_log_probs, masked_lm_ids, masked_lm_weights,
-     next_sentence_example_loss, next_sentence_log_probs, next_sentence_labels,
-     batch_mean_loss, batch_item_loss) = model_creator.create_model(features, labels, is_training)
+    model_builder.create_model(features, labels, is_training)
 
     tvars = tf.trainable_variables()
     tf.logging.info("****** {} ****** global_variables len: {}, local_variables len: {}"
@@ -146,7 +133,7 @@ def model_fn_builder(init_checkpoint, learning_rate, decay_steps, end_learning_r
                     .format(log_prefix, len(tvars), tf_util.count_variable_parameter_size(tvars)))
     if init_checkpoint and tf.compat.v1.train.checkpoint_exists(init_checkpoint):
       (assignment_map, trainable_variable_in_ckpt, trainable_variable_not_in_ckpt, ckpt_variables_in_trainable, ckpt_variables_not_in_trainable)\
-          = model_creator.get_assignment_map_from_checkpoint(tvars, init_checkpoint, verbose=True)
+          = model_builder.get_assignment_map_from_checkpoint(tvars, init_checkpoint, verbose=True)
       if len(assignment_map) > 0:
         tf.logging.info("****** {} ****** init some variables from other checkpoint: {}".format(log_prefix, str(init_checkpoint)))
         tf.train.init_from_checkpoint(init_checkpoint, assignment_map)
@@ -158,25 +145,17 @@ def model_fn_builder(init_checkpoint, learning_rate, decay_steps, end_learning_r
     output_spec = None
 
     if mode == tf.estimator.ModeKeys.TRAIN:
-      training_hooks = [
-          tf.train.LoggingTensorHook({"next_sentence_accuracy": tf_util.batch_accuracy_binary(next_sentence_log_probs, next_sentence_labels),
-                                      "batch_mean_loss": batch_mean_loss
-                                      }, every_n_iter=100)
-      ]
-      train_op = model_creator.create_train_op(batch_mean_loss, learning_rate, decay_steps, end_learning_rate, decay_pow, warmup_steps, use_tpu)
+      train_op = model_builder.get_train_op()
       output_spec = tf.estimator.EstimatorSpec(
           mode=mode,
-          loss=batch_mean_loss,
+          loss=model_builder.batch_mean_loss,
           train_op=train_op,
-          training_hooks=training_hooks)
+          training_hooks=model_builder.get_training_hooks())
 
     elif mode == tf.estimator.ModeKeys.EVAL:
-      metric_ops = model_creator.metric_fn(masked_lm_example_loss, masked_lm_log_probs, masked_lm_ids,
-                    masked_lm_weights, next_sentence_example_loss,
-                    next_sentence_log_probs, next_sentence_labels)
-      output_spec = tf.estimator.EstimatorSpec(mode=mode, loss=batch_mean_loss, eval_metric_ops=metric_ops)
+      output_spec = tf.estimator.EstimatorSpec(mode=mode, loss=model_builder.batch_mean_loss, eval_metric_ops=model_builder.get_metric_ops())
     else:
-      predict_ops = model_creator.create_predict_ops()
+      predict_ops = model_builder.get_predict_ops()
       output_spec = tf.estimator.EstimatorSpec(mode=mode, predictions=predict_ops)
     return output_spec
 
@@ -191,7 +170,7 @@ def main(_):
         tf.gfile.DeleteRecursively(FLAGS.model_dir)
     tf.gfile.MakeDirs(FLAGS.model_dir)
 
-    name_to_features = model_creator.get_name_to_features()
+    name_to_features = model_builder.get_name_to_features()
 
     def get_input_fn_train():
         tf.logging.info("*** Input Files For Train ***")
@@ -311,5 +290,6 @@ if __name__ == "__main__":
     flags = tf.flags
     FLAGS = flags.FLAGS
     tf.logging.set_verbosity(LogVerbosity[FLAGS.log_verbosity].value)
+
     tf.app.run()
 
