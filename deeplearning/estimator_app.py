@@ -23,7 +23,7 @@ import tensorflow as tf
 from common import util
 from common import tf_util
 
-PROJECT_DIR = util.DirUtils.get_parent_dir(__file__, 2)
+PROJECT_DIR = util.DirUtils.get_parent_dir(__file__, 1)
 from common import dataset_builder
 
 # ========= If want to use other models, just need change here ========

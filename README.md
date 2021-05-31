@@ -19,10 +19,7 @@
 
 这里先以在人工智能领域得到广泛应用的 DeepLearning 为开端，领路其 "峰景"
 
-关注微信公众号，获取更多 和 最新信息
+### 关注微信公众号，获取更多 和 最新信息
 
 ![image](https://github.com/ethanchiu7/peakview/blob/main/img/peakview-weixin.jpg)
 
-* 高质量
-* 高复用
-* 高性能

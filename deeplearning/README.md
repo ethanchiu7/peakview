@@ -1,4 +1,4 @@
-# DeepLearning 深度学习
+# DeepLearning
 
 ![image](https://github.com/ethanchiu7/peakview/blob/main/img/peakview-weixin.jpg)
 
