@@ -15,7 +15,7 @@ import six
 import tensorflow as tf
 
 
-class NetworkConfig(object):
+class Config(object):
     """Configuration for `BertModel`."""
 
     def __init__(self, *args, **kwargs):
@@ -24,7 +24,7 @@ class NetworkConfig(object):
     @classmethod
     def from_dict(cls, json_object):
         """Constructs a `BertConfig` from a Python dictionary of parameters."""
-        config = NetworkConfig(vocab_size=None)
+        config = Config(vocab_size=None)
         for (key, value) in six.iteritems(json_object):
             config.__dict__[key] = value
         return config
@@ -46,7 +46,14 @@ class NetworkConfig(object):
         return json.dumps(self.to_dict(), indent=2, sort_keys=True) + "\n"
 
 
-class RunningConfig(NetworkConfig):
+class ModelConfig(Config):
+
+    def __init__(self):
+        super(ModelConfig, self).__init__()
+        self.vocab_size = 512
+
+
+class RunningConfig(Config):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

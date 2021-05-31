@@ -159,12 +159,12 @@ class ModelBuilder(model_builder.ModelBuilder):
         self.pooled_output = model.get_pooled_output()
 
         # pretrain loss
-        # batch_mean_loss = masked_lm_loss + next_sentence_loss
-        # batch_item_loss = masked_lm_example_loss + next_sentence_example_loss
+        batch_mean_loss = masked_lm_loss + next_sentence_loss
+        batch_item_loss = masked_lm_example_loss + next_sentence_example_loss
 
         # finetune loss
-        batch_mean_loss = next_sentence_loss
-        batch_item_loss = next_sentence_example_loss
+        # batch_mean_loss = next_sentence_loss
+        # batch_item_loss = next_sentence_example_loss
 
         tf.summary.scalar("next_sentence_loss", next_sentence_loss)
         tf.summary.scalar("next_sentence_accuracy",

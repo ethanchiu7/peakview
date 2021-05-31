@@ -176,7 +176,7 @@ class ModelBuilder(metaclass=ABCMeta):
             learning_rate = ((1.0 - is_warmup) * learning_rate + is_warmup * warmup_learning_rate)
         return learning_rate
 
-    def get_train_op(self, *args, **kwargs):
+    def get_train_op(self):
         """Creates an optimizer training op."""
         global_step = tf.train.get_or_create_global_step()
         # learning_rate = self._decay_warmup_lr(global_step, kwargs["init_lr"], kwargs["num_decay_steps"],
@@ -202,7 +202,7 @@ class ModelBuilder(metaclass=ABCMeta):
         # new_global_step = global_step + 1
         # train_op = tf.group(train_op, [global_step.assign(new_global_step)])
         self.train_op = train_op
-        return train_op
+        return self.train_op
 
     def get_metric_ops(self):
         predictions = tf.argmax(self.logits, axis=-1, output_type=tf.int32)
@@ -217,7 +217,12 @@ class ModelBuilder(metaclass=ABCMeta):
         predictions = {"probabilities": self.probabilities}
         return predictions
 
-
     def get_training_hooks(self):
+        return None
+
+    def get_evaluation_hooks(self):
+        return None
+
+    def get_prediction_hooks(self):
         return None
 

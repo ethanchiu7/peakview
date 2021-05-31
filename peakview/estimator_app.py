@@ -23,20 +23,19 @@ import tensorflow as tf
 from common import util
 from common import tf_util
 
-PARENT_DIR = util.DirUtils.get_parent_dir(__file__, 1)
+PROJECT_DIR = util.DirUtils.get_parent_dir(__file__, 2)
 from common import dataset_builder
-# from common import model_builder
 
-# TODO by Ethan 2021-05-31, 周一, 14:37:
 # ========= If want to use other models, just need change here ========
 from models import bert_finetune as modeling
-running_config = modeling.RunningConfig()
-network_config = modeling.NetworkConfig()
-model_builder = modeling.ModelBuilder()
 # ====================================================================
+
 # import importlib
 # modellib = importlib.import_module("models.{}".format("bert_finetune"))
 # ====================================================================
+running_config = modeling.RunningConfig()
+network_config = modeling.ModelConfig()
+model_builder = modeling.ModelBuilder()
 
 
 class RunMode(enum.Enum):
@@ -63,9 +62,9 @@ def define_flags():
 
     flags.DEFINE_string("model_builder", "models.bert_finetune", "define how to build current models")
 
-    flags.DEFINE_string("model_dir", "{}/model_dir/{}".format(PARENT_DIR, running_config.model_name),
+    flags.DEFINE_string("model_dir", "{}/model_dir/{}".format(PROJECT_DIR, running_config.model_name),
                         "The output directory where the models checkpoints will be written.")
-    flags.DEFINE_string("init_checkpoint", "{}/model_dir/{}".format(PARENT_DIR, running_config.model_name),
+    flags.DEFINE_string("init_checkpoint", "{}/model_dir/{}".format(PROJECT_DIR, running_config.model_name),
                         "Initial checkpoint (usually from a pre-trained models).")
 
     flags.DEFINE_boolean("clear_model_dir", running_config.clear_model_dir, "If remove model_dir.")
@@ -153,10 +152,12 @@ def model_fn_builder(init_checkpoint, learning_rate, decay_steps, end_learning_r
           training_hooks=model_builder.get_training_hooks())
 
     elif mode == tf.estimator.ModeKeys.EVAL:
-      output_spec = tf.estimator.EstimatorSpec(mode=mode, loss=model_builder.batch_mean_loss, eval_metric_ops=model_builder.get_metric_ops())
+      output_spec = tf.estimator.EstimatorSpec(mode=mode, loss=model_builder.batch_mean_loss,
+                                               eval_metric_ops=model_builder.get_metric_ops(),
+                                               evaluation_hooks=model_builder.get_evaluation_hooks())
     else:
       predict_ops = model_builder.get_predict_ops()
-      output_spec = tf.estimator.EstimatorSpec(mode=mode, predictions=predict_ops)
+      output_spec = tf.estimator.EstimatorSpec(mode=mode, predictions=predict_ops, prediction_hooks=model_builder.get_prediction_hooks())
     return output_spec
 
   return model_fn
@@ -164,7 +165,7 @@ def model_fn_builder(init_checkpoint, learning_rate, decay_steps, end_learning_r
 
 def main(_):
     tf.logging.info("[BEGIN] {}".format(__file__))
-    tf.logging.info("PARENT_DIR: {}, Run Mode: {}".format(PARENT_DIR, FLAGS.run_mode))
+    tf.logging.info("PARENT_DIR: {}, Run Mode: {}".format(PROJECT_DIR, FLAGS.run_mode))
     if FLAGS.clear_model_dir:
         tf.logging.info("DeleteRecursively: {}".format(FLAGS.model_dir))
         tf.gfile.DeleteRecursively(FLAGS.model_dir)
