@@ -5,7 +5,7 @@
     Site    :
     Suggestion  ：
     Description :
-    File    :   util.py
+    File    :   utils.py
     Software    :   PyCharm
 """
 import os
@@ -100,27 +100,7 @@ class FileUtils(object):
             logger.info("remove file: {}".format(file_path))
             os.remove(file_path)
 
-    @staticmethod
-    def pattern_to_files(input_files, is_file_patterns):
-        """
 
-        :param patterns:
-        :param is_file_patterns:
-        :return:
-        """
-        input_file_paths = []
-        if is_file_patterns:
-            if isinstance(input_files, str):
-                input_files = input_files.split(",")
-            assert isinstance(input_files, (list, tuple))
-            for input_pattern in input_files:
-                input_file_paths.extend(tf.gfile.Glob(input_pattern))
-        else:
-            if isinstance(input_files, str):
-                input_files = input_files.split(",")
-            assert isinstance(input_files, (list, tuple))
-            input_file_paths.extend(input_files)
-        return input_file_paths
 
 
 class DataWriter(object):

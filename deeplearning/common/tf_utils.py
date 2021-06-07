@@ -5,7 +5,7 @@
     Site    :   
     Suggestion  ：
     Description :
-    File    :   tf_util.py
+    File    :   tf_utils.py
     Software    :   PyCharm
 """
 import six
@@ -76,6 +76,33 @@ def get_shape_list(tensor, expected_rank=None):
   for index in non_static_indexes:
     shape[index] = dyn_shape[index]
   return shape
+
+
+def reshape_to_matrix(input_tensor):
+  """Reshapes a >= rank 2 tensor to a rank 2 tensor (i.e., a matrix)."""
+  ndims = input_tensor.shape.ndims
+  if ndims < 2:
+    raise ValueError("Input tensor must have at least rank 2. Shape = %s" %
+                     (input_tensor.shape))
+  if ndims == 2:
+    return input_tensor
+
+  width = input_tensor.shape[-1]
+  output_tensor = tf.reshape(input_tensor, [-1, width])
+  return output_tensor
+
+
+def reshape_from_matrix(output_tensor, orig_shape_list):
+  """Reshapes a rank 2 tensor back to its original rank >= 2 tensor."""
+  if len(orig_shape_list) == 2:
+    return output_tensor
+
+  output_shape = get_shape_list(output_tensor)
+
+  orig_dims = orig_shape_list[0:-1]
+  width = output_shape[-1]
+
+  return tf.reshape(output_tensor, orig_dims + [width])
 
 
 def count_variable_parameter_size(variables):

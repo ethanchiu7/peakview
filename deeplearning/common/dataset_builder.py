@@ -17,8 +17,8 @@ import numpy as np
 import six
 import json
 import copy
-from common import util
-from common import tf_util
+from common import utils
+from common import tf_utils
 
 
 class DataSource(object):
@@ -27,47 +27,52 @@ class DataSource(object):
     ARRAY = "array"
 
 
-class DataSetCreator(object):
-    def __init__(self, input_files, is_file_patterns=False, name_to_features=None, data_source=DataSource.TFRECORD):
-        if name_to_features is None and data_source == DataSource.TFRECORD:
-            raise Exception("If data_source was a tfrecord, name_to_features must be given ")
-        self.input_file_paths = util.FileUtils.pattern_to_files(input_files, is_file_patterns)
-        tf.logging.info(" [DataSetCreator] input_file_paths count {} :".format(len(self.input_file_paths)))
-        for file_path in self.input_file_paths:
-            tf.logging.info("  %s" % file_path)
+class DataSetBuilder(object):
+    def __init__(self):
+        pass
 
-        self.name_to_features = name_to_features
-        self.data_source = data_source
+    @staticmethod
+    def pattern_to_files(input_files, is_file_patterns):
+        """
 
-    def input_fn_builder(self, batch_size=64, epoch=1, is_training=True, num_cpu_threads=4):
-        if self.data_source == DataSource.TFRECORD:
-            tf.logging.info(" [DataSetCreator] -> tfrecord_input_fn_builder ")
-            return self.tfrecord_input_fn_builder(self.input_file_paths, self.name_to_features, batch_size, epoch, is_training, num_cpu_threads)
-        if self.data_source == DataSource.TEXT:
-            return
-        if self.data_source == DataSource.ARRAY:
-            return
+        :param patterns:
+        :param is_file_patterns:
+        :return:
+        """
+        input_file_paths = []
+        if is_file_patterns:
+            if isinstance(input_files, str):
+                input_files = input_files.split(",")
+            assert isinstance(input_files, (list, tuple))
+            for input_pattern in input_files:
+                input_file_paths.extend(tf.gfile.Glob(input_pattern))
+        else:
+            if isinstance(input_files, str):
+                input_files = input_files.split(",")
+            assert isinstance(input_files, (list, tuple))
+            input_file_paths.extend(input_files)
+        return input_file_paths
 
     @classmethod
-    def feature_dict_input_fn_builder(cls,
-                                      input_files,
-                                      batch_size=64,
-                                      epoch=1,
-                                      is_training=True,
-                                      num_cpu_threads=4):
+    def get_feature_dict_input_fn(cls,
+                                  input_files,
+                                  batch_size=64,
+                                  epoch=1,
+                                  is_training=True,
+                                  num_cpu_threads=4):
         pass
 
     @classmethod
-    def text_input_fn_builder(cls,
-                              input_files,
-                              batch_size=64,
-                              epoch=1,
-                              is_training=True,
-                              num_cpu_threads=4):
+    def get_text_input_fn(cls,
+                          input_files,
+                          batch_size=64,
+                          epoch=1,
+                          is_training=True,
+                          num_cpu_threads=4):
         pass
 
     @classmethod
-    def tfrecord_input_fn_builder(cls, input_files, name_to_features, batch_size, epoch, is_training, num_cpu_threads):
+    def get_tfrecord_input_fn(cls, input_files, name_to_features, batch_size, epoch, is_training, num_cpu_threads):
         """
 
         :param input_files: list of file path, or list of file pattern, or string which split by ","

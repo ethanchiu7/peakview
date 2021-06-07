@@ -17,8 +17,8 @@ import numpy as np
 import six
 import json
 import copy
-from common import util
-from common import tf_util
+from common import utils
+from common import tf_utils
 
 
 class ModelBuilder(metaclass=ABCMeta):
@@ -33,7 +33,7 @@ class ModelBuilder(metaclass=ABCMeta):
         self.train_op = None
 
     @abstractmethod
-    def get_name_to_features(self):
+    def get_name_to_features(self, with_labels=True):
         seq_length = 128
         max_predictions_per_seq = 15
         # BERT
@@ -110,7 +110,7 @@ class ModelBuilder(metaclass=ABCMeta):
         pass
 
     @abstractmethod
-    def create_model(self, features, labels, is_training):
+    def create_model(self, features, labels, is_training, with_labels=True):
         input_ids = features["input_ids"]
         input_mask = features["input_mask"]
         segment_ids = features["segment_ids"]
@@ -185,7 +185,7 @@ class ModelBuilder(metaclass=ABCMeta):
         # It is recommended that you use this optimizer for fine tuning, since this
         # is how the models was trained (note that the Adam m/v variables are NOT
         # loaded from init_checkpoint.)
-        optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate, epsilon=1e-6)
+        optimizer = tf.train.AdamOptimizer(learning_rate=0.0005, epsilon=1e-6)
 
         tvars = tf.trainable_variables()
         grads = tf.gradients(self.batch_mean_loss, tvars)

@@ -21,7 +21,7 @@ import re
 import numpy as np
 import six
 import tensorflow as tf
-from common import tf_util
+from common import tf_utils
 
 from common import model_builder
 from common import config
@@ -111,8 +111,7 @@ class ModelBuilder(model_builder.ModelBuilder):
         self.model_config = ModelConfig()
         self.running_config = RunningConfig()
 
-
-    def get_name_to_features(self):
+    def get_name_to_features(self, with_labels=True):
         model_conf = self.model_config
         name_to_features = {
             "input_ids": tf.io.FixedLenFeature([model_conf.max_position_embeddings], tf.int64),
@@ -126,7 +125,7 @@ class ModelBuilder(model_builder.ModelBuilder):
 
         return name_to_features
 
-    def create_model(self, features, labels, is_training):
+    def create_model(self, features, labels, is_training, with_labels=True):
         """Creates a classification models."""
         tf.logging.info("[create_model] creating ...")
         model_config = self.model_config
@@ -135,6 +134,7 @@ class ModelBuilder(model_builder.ModelBuilder):
         input_ids = features["input_ids"]
         input_mask = features["input_mask"]
         segment_ids = features["segment_ids"]
+
         masked_lm_positions = features["masked_lm_positions"]
         masked_lm_ids = features["masked_lm_ids"]
         masked_lm_weights = features["masked_lm_weights"]
@@ -168,7 +168,7 @@ class ModelBuilder(model_builder.ModelBuilder):
 
         tf.summary.scalar("next_sentence_loss", next_sentence_loss)
         tf.summary.scalar("next_sentence_accuracy",
-                          tf_util.batch_accuracy_binary(next_sentence_log_probs, next_sentence_labels))
+                          tf_utils.batch_accuracy_binary(next_sentence_log_probs, next_sentence_labels))
         self.labels = labels
         self.masked_lm_example_loss = masked_lm_example_loss
         self.masked_lm_log_probs = masked_lm_log_probs
@@ -239,7 +239,7 @@ class ModelBuilder(model_builder.ModelBuilder):
 
     def get_training_hooks(self):
         training_hooks = [
-            tf.train.LoggingTensorHook({"next_sentence_accuracy": tf_util.batch_accuracy_binary(
+            tf.train.LoggingTensorHook({"next_sentence_accuracy": tf_utils.batch_accuracy_binary(
                 self.next_sentence_log_probs, self.next_sentence_labels),
                                         "batch_mean_loss": self.batch_mean_loss
                                         }, every_n_iter=100)
@@ -560,7 +560,7 @@ def embedding_sentence_dist(input_tensor,
         name="sentence_index_embedding",
         shape=[max_sentence_len, width],
         initializer=create_initializer(initializer_range))
-    sentence_index_embedding = tf_util.one_hot_lookup_table(sentence_ids, sentence_embed_table)
+    sentence_index_embedding = tf_utils.one_hot_lookup_table(sentence_ids, sentence_embed_table)
     output += sentence_index_embedding
 
     # tts_dist embedding
@@ -569,8 +569,8 @@ def embedding_sentence_dist(input_tensor,
         shape=[len(dist_bucket_boundaries) + 1, width],
         initializer=create_initializer(initializer_range)
     )
-    tts_dist_bucketed = tf_util.bucket_by_boundaries(tts_dist, dist_bucket_boundaries)
-    tts_dist_embedding = tf_util.one_hot_lookup_table(tts_dist_bucketed, dist_embed_table)
+    tts_dist_bucketed = tf_utils.bucket_by_boundaries(tts_dist, dist_bucket_boundaries)
+    tts_dist_embedding = tf_utils.one_hot_lookup_table(tts_dist_bucketed, dist_embed_table)
     output += tts_dist_embedding
     output = layer_norm_and_dropout(output, dropout_prob)
     return output

@@ -66,6 +66,7 @@ class RunningConfig(Config):
         self.train_file = ""
         self.eval_file = ""
         self.predict_file = ""
+        self.is_file_patterns = True
 
 
 

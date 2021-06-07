@@ -20,14 +20,14 @@ import enum
 import json
 import numpy as np
 import tensorflow as tf
-from common import util
-from common import tf_util
+from common import utils
+from common import tf_utils
 
-PROJECT_DIR = util.DirUtils.get_parent_dir(__file__, 1)
+PROJECT_DIR = utils.DirUtils.get_parent_dir(__file__, 1)
 from common import dataset_builder
 
 # ========= If want to use other models, just need change here ========
-from models import bert_finetune as modeling
+from models import simons_bert as modeling
 # ====================================================================
 
 # import importlib
@@ -53,10 +53,14 @@ class LogVerbosity(enum.Enum):
     FATAL = tf.logging.FATAL
 
 
+flags = tf.flags
+FLAGS = flags.FLAGS
+
+
 def define_flags():
     ## ------  Required parameters
-    flags.DEFINE_enum("run_mode", RunMode.PREDICT.name, [e.name for e in RunMode], "Run this py mode, TRAIN/EVAL/TRAIN_WITH_EVAL/PREDICT")
-    flags.DEFINE_enum("log_verbosity", LogVerbosity.INFO.value, [e.name for e in LogVerbosity],
+    flags.DEFINE_enum("run_mode", RunMode.TRAIN.name, [e.name for e in RunMode], "Run this py mode, TRAIN/EVAL/TRAIN_WITH_EVAL/PREDICT")
+    flags.DEFINE_enum("log_verbosity", LogVerbosity.INFO.name, [e.name for e in LogVerbosity],
                       "tf logging set_verbosity, DEBUG/INFO/WARN/ERROR/FATAL")
     flags.DEFINE_boolean("use_gpu", False, "If use GPU.")
 
@@ -70,7 +74,7 @@ def define_flags():
     flags.DEFINE_boolean("clear_model_dir", running_config.clear_model_dir, "If remove model_dir.")
     flags.DEFINE_integer("save_checkpoints_steps", running_config.save_checkpoints_steps, "How often to save the models checkpoint.")
 
-    flags.DEFINE_boolean("is_file_patterns", True, "If train_file / eval_file / predict_file is file patterns.")
+    flags.DEFINE_boolean("is_file_patterns", running_config.is_file_patterns, "If train_file / eval_file / predict_file is file patterns.")
     # /nfs/project/ethan/nightingale/deeplearning/tfrecord/*.tfrecord
     flags.DEFINE_string("train_file", running_config.train_file, "Input TF example files (can be a glob or comma separated).")
     flags.DEFINE_integer("train_batch_size", 4, "Total batch size for training.")
@@ -123,13 +127,14 @@ def model_fn_builder(init_checkpoint, learning_rate, decay_steps, end_learning_r
       tf.logging.info("****** %s ******  name = %s, shape = %s" % (log_prefix, name, features[name].shape))
 
     is_training = (mode == tf.estimator.ModeKeys.TRAIN)
-    model_builder.create_model(features, labels, is_training)
+    with_labels = (mode != tf.estimator.ModeKeys.PREDICT)
+    model_builder.create_model(features, labels, is_training, with_labels)
 
     tvars = tf.trainable_variables()
     tf.logging.info("****** {} ****** global_variables len: {}, local_variables len: {}"
                     .format(log_prefix, len(tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)), len(tf.get_collection(tf.GraphKeys.LOCAL_VARIABLES))))
     tf.logging.info("****** {} ****** trainable_variables len: {}, trainable_variables parameter size: {}"
-                    .format(log_prefix, len(tvars), tf_util.count_variable_parameter_size(tvars)))
+                    .format(log_prefix, len(tvars), tf_utils.count_variable_parameter_size(tvars)))
     if init_checkpoint and tf.compat.v1.train.checkpoint_exists(init_checkpoint):
       (assignment_map, trainable_variable_in_ckpt, trainable_variable_not_in_ckpt, ckpt_variables_in_trainable, ckpt_variables_not_in_trainable)\
           = model_builder.get_assignment_map_from_checkpoint(tvars, init_checkpoint, verbose=True)
@@ -175,40 +180,36 @@ def main(_):
 
     def get_input_fn_train():
         tf.logging.info("*** Input Files For Train ***")
-        train_dataset_creator = dataset_builder.DataSetCreator(FLAGS.train_file,
-                                                             is_file_patterns=FLAGS.is_file_patterns,
-                                                             name_to_features=name_to_features,
-                                                             data_source=dataset_builder.DataSource.TFRECORD)
+        input_file_paths = dataset_builder.DataSetBuilder.pattern_to_files(FLAGS.train_file, is_file_patterns=FLAGS.is_file_patterns)
+        return dataset_builder.DataSetBuilder.get_tfrecord_input_fn(input_files=input_file_paths,
+                                                                    name_to_features=model_builder.get_name_to_features(
+                                                                        with_labels=True),
+                                                                    batch_size=FLAGS.train_batch_size,
+                                                                    epoch=FLAGS.train_epoch,
+                                                                    is_training=True,
+                                                                    num_cpu_threads=4)
 
-        train_input_fn = train_dataset_creator.input_fn_builder(batch_size=FLAGS.train_batch_size,
-                                                                epoch=FLAGS.train_epoch,
-                                                                is_training=True,
-                                                                num_cpu_threads=4)
-        return train_input_fn
-
-    def get_input_fn_eval():
+    def get_eval_input_fn():
         tf.logging.info("*** Input Files For Eval ***")
-        eval_dataset_creator = dataset_builder.DataSetCreator(FLAGS.eval_file,
-                                                            is_file_patterns=FLAGS.is_file_patterns,
-                                                            name_to_features=name_to_features,
-                                                            data_source=dataset_builder.DataSource.TFRECORD)
-        eval_input_fn = eval_dataset_creator.input_fn_builder(batch_size=FLAGS.train_batch_size,
-                                                              epoch=1,
-                                                              is_training=False,
-                                                              num_cpu_threads=1)
-        return eval_input_fn
+        input_file_paths = dataset_builder.DataSetBuilder.pattern_to_files(FLAGS.eval_file, is_file_patterns=FLAGS.is_file_patterns)
+        return dataset_builder.DataSetBuilder.get_tfrecord_input_fn(input_files=input_file_paths,
+                                                                    name_to_features=model_builder.get_name_to_features(
+                                                                        with_labels=True),
+                                                                    batch_size=FLAGS.eval_batch_size,
+                                                                    epoch=1,
+                                                                    is_training=False,
+                                                                    num_cpu_threads=4)
 
-    def get_input_fn_predict():
+    def get_predict_input_fn():
         tf.logging.info("*** Input Files For Predict ***")
-        predict_dataset_creator = dataset_builder.DataSetCreator(FLAGS.predict_file,
-                                                               is_file_patterns=FLAGS.is_file_patterns,
-                                                               name_to_features=name_to_features,
-                                                               data_source=dataset_builder.DataSource.TFRECORD)
-        predict_input_fn = predict_dataset_creator.input_fn_builder(batch_size=FLAGS.predict_batch_size,
+        input_file_paths = dataset_builder.DataSetBuilder.pattern_to_files(FLAGS.predict_file, is_file_patterns=FLAGS.is_file_patterns)
+        return dataset_builder.DataSetBuilder.get_tfrecord_input_fn(input_files=input_file_paths,
+                                                                    name_to_features=model_builder.get_name_to_features(
+                                                                        with_labels=False),
+                                                                    batch_size=FLAGS.predict_batch_size,
                                                                     epoch=1,
                                                                     is_training=False,
                                                                     num_cpu_threads=1)
-        return predict_input_fn
 
     # model_fn
     model_fn = model_fn_builder(
@@ -228,11 +229,7 @@ def main(_):
         # dist_strategy = tf.distribute.experimental.MultiWorkerMirroredStrategy()
         # dist_strategy = tf.distribute.MirroredStrategy(devices=None, cross_device_ops=tf.distribute.HierarchicalCopyAllReduce())
         dist_strategy = tf.distribute.MirroredStrategy(devices=None, cross_device_ops=tf.distribute.NcclAllReduce())
-    ''' IF ERROR COULD TRY
-    dist_strategy = tf.contrib.distribute.MirroredStrategy(
-        devices=["device:GPU:%d" % i for i in range(FLAGS.n_gpus)],
-        cross_tower_ops=tf.distribute.HierarchicalCopyAllReduce())
-    '''
+
     run_config = tf.estimator.RunConfig(
         model_dir=FLAGS.model_dir,
         save_summary_steps=100,
@@ -262,34 +259,33 @@ def main(_):
     if FLAGS.run_mode == RunMode.EVAL.name:
         tf.logging.info("***** Running evaluation *****")
         tf.logging.info("  Batch size = %d", FLAGS.eval_batch_size)
-        result = estimator.evaluate(input_fn=get_input_fn_eval())
-        tf_util.write_eval_result(result, output_eval_file)
+        result = estimator.evaluate(input_fn=get_eval_input_fn())
+        tf_utils.write_eval_result(result, output_eval_file)
 
     # do_train_with_eval
     if FLAGS.run_mode == RunMode.TRAIN_WITH_EVAL.name:
         tf.logging.info("***** Running training with evaluation *****")
-        tf.logging.info("  Batch size = %d", FLAGS.eval_batch_size)
+        tf.logging.info("Train Batch size = %d", FLAGS.train_batch_size)
+        tf.logging.info("Eval Batch size = %d", FLAGS.eval_batch_size)
         train_spec = tf.estimator.TrainSpec(input_fn=get_input_fn_train())
-        eval_spec = tf.estimator.EvalSpec(input_fn=get_input_fn_eval())
+        eval_spec = tf.estimator.EvalSpec(input_fn=get_eval_input_fn())
         result = tf.estimator.train_and_evaluate(estimator, train_spec, eval_spec)
-        tf_util.write_eval_result(result, output_eval_file)
+        tf_utils.write_eval_result(result, output_eval_file)
 
     # do_predict
     output_predict_file = os.path.join(FLAGS.model_dir, "predict_results.txt")
     if FLAGS.run_mode == RunMode.PREDICT.name:
         tf.logging.info("***** Running prediction *****")
-        tf.logging.info("  Batch size = %d", FLAGS.eval_batch_size)
-        predict_result_it = estimator.predict(input_fn=get_input_fn_predict(), yield_single_examples=True)
-        tf_util.parse_and_record_predict_result(predict_result_it, output_predict_file, FLAGS.num_actual_predict_examples)
+        tf.logging.info("  Batch size = %d", FLAGS.predict_batch_size)
+        predict_result_it = estimator.predict(input_fn=get_predict_input_fn(), yield_single_examples=True)
+        tf_utils.parse_and_record_predict_result(predict_result_it, output_predict_file, FLAGS.num_actual_predict_examples)
 
-    tf.logging.info("[FINISH] {}".format(__file__))
+    tf.logging.info("[END] {}".format(__file__))
     exit(0)
 
 
 if __name__ == "__main__":
     define_flags()
-    flags = tf.flags
-    FLAGS = flags.FLAGS
     tf.logging.set_verbosity(LogVerbosity[FLAGS.log_verbosity].value)
 
     tf.app.run()
