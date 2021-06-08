@@ -59,7 +59,7 @@ FLAGS = flags.FLAGS
 
 def define_flags():
     ## ------  Required parameters
-    flags.DEFINE_enum("run_mode", RunMode.TRAIN.name, [e.name for e in RunMode], "Run this py mode, TRAIN/EVAL/TRAIN_WITH_EVAL/PREDICT")
+    flags.DEFINE_enum("run_mode", RunMode.PREDICT.name, [e.name for e in RunMode], "Run this py mode, TRAIN/EVAL/TRAIN_WITH_EVAL/PREDICT")
     flags.DEFINE_enum("log_verbosity", LogVerbosity.INFO.name, [e.name for e in LogVerbosity],
                       "tf logging set_verbosity, DEBUG/INFO/WARN/ERROR/FATAL")
     flags.DEFINE_boolean("use_gpu", False, "If use GPU.")
@@ -85,7 +85,7 @@ def define_flags():
 
     flags.DEFINE_string("predict_file", running_config.predict_file,"Input TF example files (can be a glob or comma separated).")
     flags.DEFINE_integer("predict_batch_size", 10, "Total batch size for predict.")
-    flags.DEFINE_integer("num_actual_predict_examples", 10, "The num of examples during predict mode.")
+    flags.DEFINE_integer("num_actual_predict_examples", 2000, "The num of examples during predict mode.")
 
     # learning rate polynomial_decay
     flags.DEFINE_float("learning_rate", running_config.learning_rate, "The initial learning rate for Adam.")

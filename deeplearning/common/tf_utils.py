@@ -262,8 +262,10 @@ def parse_and_record_predict_result(predict_result_it, output_predict_file, num_
         num_written_lines = 0
         tf.logging.info("***** Predict results *****\n  output_predict_file: {}".format(output_predict_file))
         for (i, prediction) in enumerate(predict_result_it):
-            if num_actual_predict_examples > 0 and i >= num_actual_predict_examples:
+            if num_actual_predict_examples > 0 and num_written_lines >= num_actual_predict_examples:
                 break
+            if not np.isnan(prediction["batch_sample_loss"].item()):
+                continue
             output_line = json.dumps(convert_ndarrays_to_lists(prediction), ensure_ascii=False)
             output_line += "\n"
             writer.write(output_line)
