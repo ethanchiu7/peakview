@@ -71,7 +71,6 @@ def define_flags():
 
     flags.DEFINE_boolean("is_file_patterns", running_config.is_file_patterns,
                          "If train_file / eval_file / predict_file is file patterns.")
-    # /nfs/project/ethan/nightingale/deeplearning/tfrecord/*.tfrecord
     flags.DEFINE_string("train_file", running_config.train_file,
                         "Input TF example files (can be a glob or comma separated).")
     flags.DEFINE_integer("train_batch_size", 4, "Total batch size for training.")
