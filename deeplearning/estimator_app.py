@@ -148,7 +148,7 @@ def model_fn_builder(init_checkpoint, learning_rate, decay_steps, end_learning_r
     output_spec = None
 
     if mode == tf.estimator.ModeKeys.TRAIN:
-      train_op = model_builder.get_train_op()
+      train_op = model_builder.get_train_op(learning_rate)
       output_spec = tf.estimator.EstimatorSpec(
           mode=mode,
           loss=model_builder.batch_mean_loss,
@@ -218,7 +218,6 @@ def main(_):
         tf.logging.info("DeleteRecursively: {}".format(FLAGS.model_dir))
         tf.gfile.DeleteRecursively(FLAGS.model_dir)
     tf.gfile.MakeDirs(FLAGS.model_dir)
-
 
     def get_input_fn_train():
         tf.logging.info("*** Input Files For Train ***")
