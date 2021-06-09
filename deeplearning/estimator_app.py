@@ -23,7 +23,7 @@ import importlib
 import tensorflow as tf
 from common import config_base
 from common import modeling_base
-from estimator_config import RunningConfig
+from config.estimator_config import RunningConfig
 from common import utils
 from common import tf_utils
 from common import dataset_builder
@@ -32,8 +32,8 @@ running_config: config_base.RunningConfig = RunningConfig()
 model_builder = None
 
 # ========= If want to use other modeling, just need change here ========
-# from modeling import simons_bert as modeling
-# from modeling import simons_bert_02 as modeling
+# from modeling import medallion_01 as modeling
+# from modeling import medallion_02 as modeling
 # ====================================================================
 
 
@@ -62,10 +62,8 @@ def define_flags():
 
     flags.DEFINE_boolean("use_gpu", False, "If use GPU.")
 
-    flags.DEFINE_string("model_dir", "{}/model_dir/{}".format(PROJECT_DIR, running_config.model_name),
-                        "The output directory where the modeling checkpoints will be written.")
-    flags.DEFINE_string("init_checkpoint", "{}/model_dir/{}".format(PROJECT_DIR, running_config.model_name),
-                        "Initial checkpoint (usually from a pre-trained modeling).")
+    flags.DEFINE_string("model_dir", None, "The output directory where the modeling checkpoints will be written.")
+    flags.DEFINE_string("init_checkpoint", None, "Initial checkpoint (usually from a pre-trained modeling).")
 
     flags.DEFINE_boolean("clear_model_dir", running_config.clear_model_dir, "If remove model_dir.")
     flags.DEFINE_integer("save_checkpoints_steps", running_config.save_checkpoints_steps,
@@ -170,21 +168,57 @@ def model_fn_builder(init_checkpoint, learning_rate, decay_steps, end_learning_r
 
 
 def main(_):
-    tf.logging.info("[BEGIN] {}".format(__file__))
-    tf.logging.info("PARENT_DIR: {}, Run Mode: {}".format(PROJECT_DIR, FLAGS.run_mode))
-    if FLAGS.clear_model_dir:
-        tf.logging.info("DeleteRecursively: {}".format(FLAGS.model_dir))
-        tf.gfile.DeleteRecursively(FLAGS.model_dir)
-    tf.gfile.MakeDirs(FLAGS.model_dir)
-
     to_import_module = "modeling.{}".format(FLAGS.modeling)
     print("======== import : {}".format(to_import_module))
     modeling = importlib.import_module(to_import_module)
     # network_config: config_base.NetworkConfig = modeling.NetworkConfig()
     global model_builder
     model_builder = modeling.ModelBuilder()
-
     name_to_features = model_builder.get_name_to_features()
+
+    if not FLAGS.model_dir:
+        FLAGS.model_dir = os.path.join(PROJECT_DIR, "model_dir", FLAGS.modeling)
+    if not FLAGS.init_checkpoint:
+        FLAGS.init_checkpoint = FLAGS.model_dir
+    estimator_info_str = """
+    | ================================================================|
+    Welcome to use deep learning general training framework
+    This framework is developed based on the TensorFlow 1.14 and Estimator interface, 
+    which automatically supports multi-GPU training, multi-threaded data loading, 
+    automatic model loading and saving, and migration learning. 
+    It can be used only through parameter configuration and custom network structure.
+    If you have any needs or questions, you can contact email
+    In addition, you can follow my WeChat public account "人工智能笔记"
+    GitHub: https://github.com/ethanchiu7/peakview
+    
+    欢迎使用深度学习通用训练框架
+    本框架 基于 TensorFlow 1.14 和 Estimator 接口开发，
+    自动支持多GPU训练，支持多线程数据加载，模型自动加载和保存，支持迁移学习，
+    仅需通过参数配置，以及自定义网络结构即可使用
+    如有任何需求或疑问，可以E-mail, 或关注公众号 "人工智能笔记"
+    GitHub: https://github.com/ethanchiu7/peakview
+    
+                                                    version 1.0
+                                                    author by Ethan Chiu
+                                                    zhaoxin.data@gmail.com
+    Estimator Running Information:
+    
+    
+    PROJECT_DIR: {}
+    Modeling : {}
+    Run Mode: {}
+    model_dir: {}
+    init_checkpoint: {}
+    [BEGIN FILE]: {}
+    | ================================================================|
+    """.format(PROJECT_DIR, FLAGS.modeling, FLAGS.run_mode, FLAGS.model_dir, FLAGS.init_checkpoint, __file__)
+    tf.logging.info(estimator_info_str)
+
+    if FLAGS.clear_model_dir:
+        tf.logging.info("DeleteRecursively: {}".format(FLAGS.model_dir))
+        tf.gfile.DeleteRecursively(FLAGS.model_dir)
+    tf.gfile.MakeDirs(FLAGS.model_dir)
+
 
     def get_input_fn_train():
         tf.logging.info("*** Input Files For Train ***")
@@ -288,7 +322,11 @@ def main(_):
         predict_result_it = estimator.predict(input_fn=get_predict_input_fn(), yield_single_examples=True)
         tf_utils.parse_and_record_predict_result(predict_result_it, output_predict_file, FLAGS.num_actual_predict_examples)
 
-    tf.logging.info("[END] {}".format(__file__))
+    tf.logging.info("""
+    | ================================================================|
+    [END FILE]: {}
+    | ================================================================|
+    """.format(__file__))
     exit(0)
 
 

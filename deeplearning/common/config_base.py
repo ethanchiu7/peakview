@@ -7,6 +7,7 @@
     Description :
     Based on Tensorflow 1.14
 """
+import os
 import copy
 import time
 import json
@@ -49,7 +50,6 @@ class RunningConfig(Config):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.model_name = "model_{}".format(int(time.time()))
         # learning_rate = self._decay_warmup_lr(global_step, kwargs["init_lr"], kwargs["num_decay_steps"],
         #                                 kwargs["end_learning_rate"], kwargs["decay_pow"], kwargs["num_warmup_steps"])
         self.learning_rate = 0.005
@@ -61,10 +61,11 @@ class RunningConfig(Config):
         self.is_file_patterns = True
 
 
-class NetworkConfig(Config):
+class ModelConfig(Config):
 
-    def __init__(self):
-        super(NetworkConfig, self).__init__()
+    def __init__(self, model_name=os.path.basename(__file__.split(".")[0])):
+        super(ModelConfig, self).__init__()
+        self.model_name = model_name
         self.learning_rate = 0.005
 
         self.vocab_size = 512

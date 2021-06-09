@@ -34,7 +34,7 @@ info_str = """
 print(info_str)
 
 
-class NetworkConfig(config_base.NetworkConfig):
+class ModelConfig(config_base.ModelConfig):
   """Configuration for `BertModel`."""
 
   def __init__(self, vocab_size=512, num_labels=2, max_sentence_len=128, dist_bucket_boundaries=None, hidden_size=768,
@@ -109,7 +109,7 @@ class ModelBuilder(modeling_base.ModelBuilder):
 
         self.embedding_output = None
 
-        self.model_config = NetworkConfig()
+        self.model_config = ModelConfig()
         self.running_config = RunningConfig()
 
     def get_name_to_features(self, with_labels=True):
@@ -178,13 +178,13 @@ class ModelBuilder(modeling_base.ModelBuilder):
         self.next_sentence_labels = next_sentence_labels
         self.batch_mean_loss = batch_mean_loss
 
-    def get_train_op(self):
+    def get_train_op(self, learning_rate):
         """Creates an optimizer training op."""
         global_step = tf.train.get_or_create_global_step()
         # learning_rate = cls._decay_warmup_lr(global_step, init_lr, num_decay_steps, end_learning_rate, decay_pow,
         #                                      num_warmup_steps)
 
-        optimizer = tf.train.AdamOptimizer(learning_rate=self.running_config.learning_rate)
+        optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
 
         tvars = tf.trainable_variables()
         grads = tf.gradients(self.batch_mean_loss, tvars)
@@ -273,7 +273,7 @@ class BertModel(object):
   """
 
   def __init__(self,
-               config: NetworkConfig,
+               config: ModelConfig,
                is_training,
                input_ids,
                input_mask=None,
@@ -1138,7 +1138,7 @@ def assert_rank(tensor, expected_rank, name=None):
         (name, scope_name, actual_rank, str(tensor.shape), str(expected_rank)))
 
 
-def get_masked_lm_output(bert_config: NetworkConfig, input_tensor, output_weights, positions,
+def get_masked_lm_output(bert_config: ModelConfig, input_tensor, output_weights, positions,
                          label_ids, label_weights):
   """Get loss and log probs for the masked LM."""
   input_tensor = gather_indexes(input_tensor, positions)
@@ -1183,7 +1183,7 @@ def get_masked_lm_output(bert_config: NetworkConfig, input_tensor, output_weight
   return (loss, per_example_loss, log_probs)
 
 
-def get_next_sentence_output(bert_config: NetworkConfig, input_tensor, labels):
+def get_next_sentence_output(bert_config: ModelConfig, input_tensor, labels):
   """Get loss and log probs for the next sentence prediction."""
 
   # Simple binary classification. Note that 0 is "next sentence" and 1 is

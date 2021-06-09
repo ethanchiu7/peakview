@@ -176,7 +176,7 @@ class ModelBuilder(metaclass=ABCMeta):
             learning_rate = ((1.0 - is_warmup) * learning_rate + is_warmup * warmup_learning_rate)
         return learning_rate
 
-    def get_train_op(self):
+    def get_train_op(self, *args, **kwargs):
         """Creates an optimizer training op."""
         global_step = tf.train.get_or_create_global_step()
         # learning_rate = self._decay_warmup_lr(global_step, kwargs["init_lr"], kwargs["num_decay_steps"],
