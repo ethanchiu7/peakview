@@ -5,7 +5,6 @@
     Site    :
     Suggestion  ：
     Description :
-    File    :   model_builder.py
     Based on Tensorflow 1.14
 """
 import copy
@@ -46,13 +45,6 @@ class Config(object):
         return json.dumps(self.to_dict(), indent=2, sort_keys=True) + "\n"
 
 
-class ModelConfig(Config):
-
-    def __init__(self):
-        super(ModelConfig, self).__init__()
-        self.vocab_size = 512
-
-
 class RunningConfig(Config):
 
     def __init__(self, *args, **kwargs):
@@ -67,6 +59,15 @@ class RunningConfig(Config):
         self.eval_file = ""
         self.predict_file = ""
         self.is_file_patterns = True
+
+
+class NetworkConfig(Config):
+
+    def __init__(self):
+        super(NetworkConfig, self).__init__()
+        self.learning_rate = 0.005
+
+        self.vocab_size = 512
 
 
 

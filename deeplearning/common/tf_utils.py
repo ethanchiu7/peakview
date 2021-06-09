@@ -190,6 +190,21 @@ def one_hot_lookup_table(input_ids, table):
     return input_embedding
 
 
+def normalize_with_moments(x, axes=None, epsilon=1e-8):
+    """
+    z-score
+    :param x:
+    :param axes:
+    :param epsilon:
+    :return:
+    """
+    if axes is None:
+        axes = [0, 1]
+    mean, variance = tf.nn.moments(x, axes=axes, keepdims=False)
+    x_normed = (x - mean) / tf.sqrt(variance + epsilon) # epsilon to avoid dividing by zero
+    return x_normed
+
+
 def batch_accuracy_binary(prob, label):
     prob = tf.reshape(prob, [-1])
     label = tf.reshape(label, [-1])

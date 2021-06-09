@@ -5,7 +5,7 @@
     Site    :   
     Suggestion  ：
     Description :
-    File    :   model_builder.py
+    File    :   modeling_base.py
     Based on Tensorflow 1.14
 """
 import re
@@ -110,7 +110,7 @@ class ModelBuilder(metaclass=ABCMeta):
         pass
 
     @abstractmethod
-    def create_model(self, features, labels, is_training, with_labels=True):
+    def build_model(self, features, labels, is_training, with_labels=True):
         input_ids = features["input_ids"]
         input_mask = features["input_mask"]
         segment_ids = features["segment_ids"]
@@ -183,14 +183,14 @@ class ModelBuilder(metaclass=ABCMeta):
         #                                       kwargs["end_learning_rate"], kwargs["decay_pow"], kwargs["num_warmup_steps"])
 
         # It is recommended that you use this optimizer for fine tuning, since this
-        # is how the models was trained (note that the Adam m/v variables are NOT
+        # is how the modeling was trained (note that the Adam m/v variables are NOT
         # loaded from init_checkpoint.)
         optimizer = tf.train.AdamOptimizer(learning_rate=0.0005, epsilon=1e-6)
 
         tvars = tf.trainable_variables()
         grads = tf.gradients(self.batch_mean_loss, tvars)
 
-        # This is how the models was pre-trained.
+        # This is how the modeling was pre-trained.
         (grads, _) = tf.clip_by_global_norm(grads, clip_norm=1.0)
 
         train_op = optimizer.apply_gradients(

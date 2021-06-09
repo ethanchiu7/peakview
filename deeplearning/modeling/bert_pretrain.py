@@ -4,8 +4,8 @@
     Time    ：   2021/3/30 下午12:15
     Site    :
     Suggestion  ：
-    Description : The main BERT models and related functions.
-    File    :   model_builder.py
+    Description : The main BERT modeling and related functions.
+    File    :   modeling_base.py
     Based on Tensorflow 1.14
 """
 
@@ -23,11 +23,11 @@ import six
 import tensorflow as tf
 from common import tf_utils
 
-from common import model_builder
-from common import config
+from common import modeling_base
+from common import config_base
 
 
-class ModelConfig(config.ModelConfig):
+class NetworkConfig(config_base.NetworkConfig):
   """Configuration for `BertModel`."""
 
   def __init__(self, vocab_size=512, num_labels=2, max_sentence_len=128, dist_bucket_boundaries=None, hidden_size=768,
@@ -50,7 +50,7 @@ class ModelConfig(config.ModelConfig):
         layers in the embeddings, encoder, and pooler.
       attention_probs_dropout_prob: The dropout ratio for the attention
         probabilities.
-      max_position_embeddings: The maximum sequence length that this models might
+      max_position_embeddings: The maximum sequence length that this modeling might
         ever be used with. Typically set this to something large just in case
         (e.g., 512 or 1024 or 2048).
       type_vocab_size: The vocabulary size of the `token_type_ids` passed into
@@ -78,13 +78,7 @@ class ModelConfig(config.ModelConfig):
     self.max_predictions_per_seq = max_predictions_per_seq
 
 
-class RunningConfig(config.RunningConfig):
-    def __init__(self):
-        super(RunningConfig, self).__init__()
-        self.learning_rate = 5e-5
-
-
-class ModelBuilder(model_builder.ModelBuilder):
+class ModelBuilder(modeling_base.ModelBuilder):
     def __init__(self):
         super().__init__()
         self.probabilities = None
@@ -108,7 +102,7 @@ class ModelBuilder(model_builder.ModelBuilder):
 
         self.embedding_output = None
 
-        self.model_config = ModelConfig()
+        self.model_config = NetworkConfig()
         self.running_config = RunningConfig()
 
     def get_name_to_features(self, with_labels=True):
@@ -125,8 +119,8 @@ class ModelBuilder(model_builder.ModelBuilder):
 
         return name_to_features
 
-    def create_model(self, features, labels, is_training, with_labels=True):
-        """Creates a classification models."""
+    def build_model(self, features, labels, is_training, with_labels=True):
+        """Creates a classification modeling."""
         tf.logging.info("[create_model] creating ...")
         model_config = self.model_config
         use_one_hot_embeddings = False
@@ -159,12 +153,12 @@ class ModelBuilder(model_builder.ModelBuilder):
         self.pooled_output = model.get_pooled_output()
 
         # pretrain loss
-        # batch_mean_loss = masked_lm_loss + next_sentence_loss
-        # batch_item_loss = masked_lm_example_loss + next_sentence_example_loss
+        batch_mean_loss = masked_lm_loss + next_sentence_loss
+        batch_item_loss = masked_lm_example_loss + next_sentence_example_loss
 
         # finetune loss
-        batch_mean_loss = next_sentence_loss
-        batch_item_loss = next_sentence_example_loss
+        # batch_mean_loss = next_sentence_loss
+        # batch_item_loss = next_sentence_example_loss
 
         tf.summary.scalar("next_sentence_loss", next_sentence_loss)
         tf.summary.scalar("next_sentence_accuracy",
@@ -188,7 +182,7 @@ class ModelBuilder(model_builder.ModelBuilder):
         tvars = tf.trainable_variables()
         grads = tf.gradients(self.batch_mean_loss, tvars)
 
-        # This is how the models was pre-trained.
+        # This is how the modeling was pre-trained.
         (grads, _) = tf.clip_by_global_norm(grads, clip_norm=1.0)
 
         train_op = optimizer.apply_gradients(zip(grads, tvars), global_step=global_step)
@@ -202,7 +196,7 @@ class ModelBuilder(model_builder.ModelBuilder):
         return self.train_op
 
     def get_metric_ops(self):
-        """Computes the loss and accuracy of the models."""
+        """Computes the loss and accuracy of the modeling."""
         masked_lm_log_probs = tf.reshape(self.masked_lm_log_probs,
                                          [-1, self.masked_lm_log_probs.shape[-1]])
         masked_lm_predictions = tf.argmax(
@@ -272,7 +266,7 @@ class BertModel(object):
   """
 
   def __init__(self,
-               config: ModelConfig,
+               config: NetworkConfig,
                is_training,
                input_ids,
                input_mask=None,
@@ -603,7 +597,7 @@ def embedding_postprocessor(input_tensor,
       for positional embeddings.
     initializer_range: float. Range of the weight initialization.
     max_position_embeddings: int. Maximum sequence length that might ever be
-      used with this models. This can be longer than the sequence length of
+      used with this modeling. This can be longer than the sequence length of
       input_tensor, but cannot be shorter.
     dropout_prob: float. Dropout probability applied to the final output tensor.
 
@@ -1137,7 +1131,7 @@ def assert_rank(tensor, expected_rank, name=None):
         (name, scope_name, actual_rank, str(tensor.shape), str(expected_rank)))
 
 
-def get_masked_lm_output(bert_config: ModelConfig, input_tensor, output_weights, positions,
+def get_masked_lm_output(bert_config: NetworkConfig, input_tensor, output_weights, positions,
                          label_ids, label_weights):
   """Get loss and log probs for the masked LM."""
   input_tensor = gather_indexes(input_tensor, positions)
@@ -1182,7 +1176,7 @@ def get_masked_lm_output(bert_config: ModelConfig, input_tensor, output_weights,
   return (loss, per_example_loss, log_probs)
 
 
-def get_next_sentence_output(bert_config: ModelConfig, input_tensor, labels):
+def get_next_sentence_output(bert_config: NetworkConfig, input_tensor, labels):
   """Get loss and log probs for the next sentence prediction."""
 
   # Simple binary classification. Note that 0 is "next sentence" and 1 is

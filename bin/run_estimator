@@ -1,0 +1,31 @@
+#!/bin/bash
+#
+# author by Ethan
+CURDIR=$(cd "$(dirname "$0")"; pwd)
+project_dir=$(echo $CURDIR | xargs dirname)
+repository_dir=$(echo $project_dir | xargs dirname)
+jarvis_dir=${repository_dir}/jarvis
+echo "source --> ${jarvis_dir}/bash_lib/util.sh"
+source ${jarvis_dir}/bash_lib/util.sh
+
+run_mode="EVAL"
+use_gpu=True
+
+main() {
+  script=${project_dir}/deeplearning/estimator_app.py
+  log_dir=${project_dir}/logs/stock/${run_mode}
+  ENSURE_DIR ${log_dir}
+  log_file=${log_dir}/${strategy}_$(date "+%Y-%m-%d_%H-%M-%S").log
+
+  INFO "[BEGIN] run script: ${script}"
+  INFO "log_file: ${log_file}"
+  python ${script}          \
+    --run_mode=${run_mode}  \
+    --strategy=${strategy}  \
+    > $log_file 2>&1
+  INFO "[END] run script: ${script}"
+
+}
+
+main
+
