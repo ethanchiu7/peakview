@@ -75,6 +75,7 @@ def define_flags():
                         "Input TF example files (can be a glob or comma separated).")
     flags.DEFINE_integer("train_batch_size", 4, "Total batch size for training.")
     flags.DEFINE_integer("train_epoch", 2, "Total number of training epochs to perform.")
+    flags.DEFINE_boolean("shuffle_train_files", running_config.shuffle_train_files, "If shuffle train files")
 
     flags.DEFINE_string("eval_file", running_config.eval_file,
                         "Input TF example files (can be a glob or comma separated).")
@@ -226,7 +227,7 @@ def main(_):
                                                                         with_labels=True),
                                                                     batch_size=FLAGS.train_batch_size,
                                                                     epoch=FLAGS.train_epoch,
-                                                                    is_training=True,
+                                                                    shuffle_input_files=FLAGS.shuffle_train_files,
                                                                     num_cpu_threads=4)
 
     def get_eval_input_fn():
@@ -237,7 +238,7 @@ def main(_):
                                                                         with_labels=True),
                                                                     batch_size=FLAGS.eval_batch_size,
                                                                     epoch=1,
-                                                                    is_training=False,
+                                                                    shuffle_input_files=False,
                                                                     num_cpu_threads=4)
 
     def get_predict_input_fn():
@@ -248,7 +249,7 @@ def main(_):
                                                                         with_labels=False),
                                                                     batch_size=FLAGS.predict_batch_size,
                                                                     epoch=1,
-                                                                    is_training=False,
+                                                                    shuffle_input_files=False,
                                                                     num_cpu_threads=1)
 
     # model_fn

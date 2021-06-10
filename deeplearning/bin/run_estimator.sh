@@ -21,7 +21,7 @@ PREDICT_FILE="/xx/xx/*.tfrecord,/xx/xx/*.tfrecord,"
 
 
 main() {
-  PYTHON="/home/luban/anaconda3/bin/python"
+  PYTHON="/home/yourname/anaconda3/bin/python"
   #PYTHON="/nfs/project/ethan/anaconda3/bin/python"
   JOB_SCRIPT="${PROJECT_PATH}/deeplearning/estimator_app.py"
   LOG_DIR=${PROJECT_PATH}/deeplearning/logs

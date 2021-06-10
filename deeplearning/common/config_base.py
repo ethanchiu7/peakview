@@ -56,6 +56,7 @@ class RunningConfig(Config):
         self.clear_model_dir = False
         self.save_checkpoints_steps = 10000
         self.train_file = ""
+        self.shuffle_train_files = False
         self.eval_file = ""
         self.predict_file = ""
         self.is_file_patterns = True

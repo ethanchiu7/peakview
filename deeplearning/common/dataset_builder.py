@@ -72,7 +72,7 @@ class DataSetBuilder(object):
         pass
 
     @classmethod
-    def get_tfrecord_input_fn(cls, input_files, name_to_features, batch_size, epoch, is_training, num_cpu_threads):
+    def get_tfrecord_input_fn(cls, input_files, name_to_features, batch_size, epoch, shuffle_input_files, num_cpu_threads):
         """
 
         :param input_files: list of file path, or list of file pattern, or string which split by ","
@@ -94,7 +94,7 @@ class DataSetBuilder(object):
 
         :param batch_size:
         :param epoch:
-        :param is_training:
+        :param shuffle_input_files:
         :param num_cpu_threads:
         :return: input_fn
         """
@@ -124,7 +124,7 @@ class DataSetBuilder(object):
 
             # For training, we want a lot of parallel reading and shuffling.
             # For eval, we want no shuffling and parallel reading doesn't matter.
-            if is_training:
+            if shuffle_input_files:
                 d = tf.data.Dataset.from_tensor_slices(tf.constant(input_files))
                 d = d.repeat(count=epoch)
                 d = d.shuffle(buffer_size=len(input_files))
@@ -138,7 +138,7 @@ class DataSetBuilder(object):
                     tf.data.experimental.parallel_interleave(
                         # tf.contrib.data.parallel_interleave(
                         tf.data.TFRecordDataset,
-                        sloppy=is_training,
+                        sloppy=shuffle_input_files,
                         cycle_length=cycle_length))
                 d = d.shuffle(buffer_size=100)
             else:
