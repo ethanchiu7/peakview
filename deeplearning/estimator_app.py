@@ -21,14 +21,14 @@ import json
 import numpy as np
 import importlib
 import tensorflow as tf
-from common import config_base
-from common import modeling_base
+# from common import config_base
+# from common import modeling_base
 from config.estimator_config import RunningConfig
 from common import utils
 from common import tf_utils
 from common import dataset_builder
 PROJECT_DIR = utils.DirUtils.get_parent_dir(__file__, 1)
-running_config: config_base.RunningConfig = RunningConfig()
+running_config: RunningConfig = RunningConfig()
 model_builder = None
 
 # ========= If want to use other modeling, just need change here ========
