@@ -110,7 +110,6 @@ class ModelBuilder(modeling_base.ModelBuilder):
         self.embedding_output = None
 
         self.model_config = ModelConfig()
-        self.running_config = RunningConfig()
 
     def get_name_to_features(self, with_labels=True):
         model_conf = self.model_config
