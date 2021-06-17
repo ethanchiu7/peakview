@@ -1,18 +1,17 @@
 #!/bin/bash
-#
-# author by Ethan
+# 2019-08-18
+# Author by Ethan
 CURDIR=$(cd "$(dirname "$0")"; pwd)
 PROJECT_PATH=$(echo $CURDIR | xargs dirname | xargs dirname)
-REPOSITORY_DIR=$(echo $PROJECT_PATH | xargs dirname)
-JARVIS_DIR=${REPOSITORY_DIR}/jarvis
-echo "source --> ${JARVIS_DIR}/bash_lib/util.sh"
-source ${JARVIS_DIR}/bash_lib/util.sh
+#REPOSITORY_DIR=$(echo $PROJECT_PATH | xargs dirname)
+echo "source --> ${PROJECT_PATH}/deeplearning/bin/util.sh"
+source ${PROJECT_PATH}/deeplearning/bin/util.sh
 
 if [ $# -ne 2 ]; then
         FATAL "Usage : $0 RUN_MODE MODELING"
         exit 1
 fi
-#MODELING=medallion_02
+PYTHON="/home/yourname/anaconda3/bin/python"
 RUN_MODE=${1}
 MODELING=${2}
 TRAIN_FILE="/xx/xx/*.tfrecord,/xx/xx/*.tfrecord,"
@@ -21,8 +20,6 @@ PREDICT_FILE="/xx/xx/*.tfrecord,/xx/xx/*.tfrecord,"
 
 
 main() {
-  PYTHON="/home/yourname/anaconda3/bin/python"
-  #PYTHON="/nfs/project/ethan/anaconda3/bin/python"
   JOB_SCRIPT="${PROJECT_PATH}/deeplearning/estimator_app.py"
   LOG_DIR=${PROJECT_PATH}/deeplearning/logs
   ENSURE_DIR ${LOG_DIR}
