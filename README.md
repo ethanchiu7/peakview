@@ -20,6 +20,8 @@
 这里先以在人工智能领域得到广泛应用的 DeepLearning 为开端，领路其 "峰景"
 
 ### 关注微信公众号，获取更多 和 最新信息
-
+微信公众号搜索 "人工智能笔记"
+或 微信扫描下方二维码
+关注公众号后，回复 "峰景" ，将会推送给您 "峰景" 项目具体的使用方法
 ![image](https://github.com/ethanchiu7/peakview/blob/main/img/peakview-weixin.jpg)
 
