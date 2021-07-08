@@ -87,14 +87,13 @@ def define_flags():
     flags.DEFINE_integer("num_actual_predict_examples", 2000, "The num of examples during predict mode.")
 
     # learning rate polynomial_decay
-    flags.DEFINE_integer("decay_steps", 2000, "polynomial_decay args : decay_steps")
-    flags.DEFINE_float("end_learning_rate", 0.0001, "polynomial_decay args : end_learning_rate")
-    flags.DEFINE_float("decay_pow", 1.0, "polynomial_decay args : power")
-    flags.DEFINE_integer("warmup_steps", 1000, "polynomial_decay args : decay_steps")
+    # flags.DEFINE_integer("decay_steps", 2000, "polynomial_decay args : decay_steps")
+    # flags.DEFINE_float("end_learning_rate", 0.0001, "polynomial_decay args : end_learning_rate")
+    # flags.DEFINE_float("decay_pow", 1.0, "polynomial_decay args : power")
+    # flags.DEFINE_integer("warmup_steps", 1000, "polynomial_decay args : decay_steps")
 
 
-def model_fn_builder(init_checkpoint, decay_steps, end_learning_rate, decay_pow, warmup_steps,
-                     use_tpu=False):
+def model_fn_builder(init_checkpoint):
     """Returns `model_fn` closure for GPUEstimator."""
     is_real_example = 1
 
@@ -271,12 +270,7 @@ def main(_):
                                                                     num_cpu_threads=1)
 
     # model_fn
-    model_fn = model_fn_builder(
-        init_checkpoint=FLAGS.init_checkpoint,
-        decay_steps=FLAGS.decay_steps,
-        end_learning_rate=FLAGS.end_learning_rate,
-        decay_pow=FLAGS.decay_pow,
-        warmup_steps=FLAGS.warmup_steps)
+    model_fn = model_fn_builder(init_checkpoint=FLAGS.init_checkpoint)
 
     # model_params
     model_params = None

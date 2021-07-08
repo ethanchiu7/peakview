@@ -1,0 +1,35 @@
+syntax = "proto2";
+
+package pipeline;
+
+option java_package = "com.didichuxing.rprank.fe.jobs.pipeline";
+option java_outer_classname = "NNOrderSampleProtos";
+
+message NNOrderSample {
+  required string qid = 1;
+  required uint64 pid = 2;
+  required uint64 did = 3;
+  repeated uint64 od_grid = 4;
+  repeated double od_dist = 5;
+  required uint64 timestamp = 6;
+  repeated ArrayFeats pos_feats = 7;
+  repeated ArrayFeats neg_feats = 8;
+  repeated OthersType others_type = 9;
+  optional uint32 cityid = 10;
+
+  message ArrayFeats {
+    repeated double numeric_val = 1;
+    repeated uint64 link_list = 2;
+    repeated uint32 xgb_preds = 3;
+    repeated OthersType others_feat = 4;
+  }
+
+  message OthersType {
+    required string key = 1;
+    required string value = 2;
+  }
+}
+
+message NNOrderSampleSet {
+  repeated NNOrderSample samples = 1;
+}

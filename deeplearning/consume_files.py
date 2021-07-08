@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 """
     Author  ：   Ethan Chiu
-    Time    ：   2021/3/8 下午3:22
+    Time    ：   2021/6/18 下午3:22
     Site    :
     Suggestion  ：
-    Description :   通用 多进程 文件处理工具
+    Description :   通用 多进程 文件处理工具, 通过参数 spawning 指定进程任务逻辑
     File    :   consume_files.py
 """
 import os
@@ -26,14 +26,11 @@ from multiprocessing import Pool, Manager
 
 
 def define_flags():
-    flags.DEFINE_string("spawning", "rp_rank_pairwise_proto_to_tfrecord", "define how to build current modeling")
+    flags.DEFINE_string("spawning", "proto_to_tfrecord", "define how to build current spawning")
     flags.DEFINE_integer("process_num", 4, "num of process")
-    flags.DEFINE_boolean("is_file_patterns", True,
-                         "If train_file / eval_file / predict_file is file patterns.")
-    flags.DEFINE_string(name="input_files",
-                        default="/Users/name/xx/xx.proto",
-                        help="input files")
-    flags.DEFINE_string(name="output_base", default="{}/xx/xx".format(PROJECT_DIR),
+    flags.DEFINE_boolean("is_file_patterns", True, "If train_file / eval_file / predict_file is file patterns.")
+    flags.DEFINE_string(name="input_files", default="{}/xx/*.proto".format(PROJECT_DIR), help="proto files")
+    flags.DEFINE_string(name="output_base", default="{}/tfrecord/xx".format(PROJECT_DIR),
                         help="由于输入文件的路径可能存在多个不同dir，比如 20210818、202010819，"
                              "因此需要在output_base路径基础上继承 指定数量的input_dir, 作为output_dir")
     flags.DEFINE_integer("inherit_dir_num", 1, "输出路径从输入路径继承的dir数量，"

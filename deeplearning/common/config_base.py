@@ -52,7 +52,6 @@ class RunningConfig(Config):
         super().__init__(*args, **kwargs)
         # learning_rate = self._decay_warmup_lr(global_step, kwargs["init_lr"], kwargs["num_decay_steps"],
         #                                 kwargs["end_learning_rate"], kwargs["decay_pow"], kwargs["num_warmup_steps"])
-        self.learning_rate = 0.005
         self.clear_model_dir = False
         self.save_checkpoints_steps = 10000
         self.train_file = ""
