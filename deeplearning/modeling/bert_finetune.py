@@ -177,12 +177,13 @@ class ModelBuilder(modeling_base.ModelBuilder):
         self.next_sentence_labels = next_sentence_labels
         self.batch_mean_loss = batch_mean_loss
 
-    def get_train_op(self, learning_rate):
+    def get_train_op(self):
         """Creates an optimizer training op."""
         global_step = tf.train.get_or_create_global_step()
         # learning_rate = cls._decay_warmup_lr(global_step, init_lr, num_decay_steps, end_learning_rate, decay_pow,
         #                                      num_warmup_steps)
 
+        learning_rate = tf.constant(value=self.model_config.learning_rate, shape=[], dtype=tf.float32)
         optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
 
         tvars = tf.trainable_variables()
@@ -199,6 +200,11 @@ class ModelBuilder(modeling_base.ModelBuilder):
         # new_global_step = global_step + 1
         # train_op = tf.group(train_op, [global_step.assign(new_global_step)])
         self.train_op = train_op
+
+        # Tensorboard 会将 metric ops 中 与 training 过程 summary scalar 的 相同Key 展示在同一坐标系
+        tf.summary.scalar("next_sentence_accuracy", tf_utils.batch_accuracy_binary(self.next_sentence_log_probs, self.labels))
+        tf.summary.scalar("next_sentence_loss", self.batch_mean_loss)
+
         return self.train_op
 
     def get_metric_ops(self):
@@ -231,6 +237,11 @@ class ModelBuilder(modeling_base.ModelBuilder):
         }
 
     def get_predict_ops(self):
+        """
+        Metric with name "loss" is not allowed, because Estimator already defines a default metric with the same name
+        每个value 对应的Tensor 其第一个维度必须 等于 batch size
+        :return:
+        """
         return {
             "next_sentence_labels": self.next_sentence_labels,
             "next_sentence_log_probs": self.next_sentence_log_probs,

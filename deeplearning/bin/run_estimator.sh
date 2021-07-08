@@ -1,6 +1,8 @@
 #!/bin/bash
-# 2019-08-18
+# 2021-06-18
+# 重修所罗门神庙
 # Author by Ethan
+# -----------------
 CURDIR=$(cd "$(dirname "$0")"; pwd)
 PROJECT_PATH=$(echo $CURDIR | xargs dirname | xargs dirname)
 #REPOSITORY_DIR=$(echo $PROJECT_PATH | xargs dirname)
@@ -25,28 +27,30 @@ main() {
   ENSURE_DIR ${LOG_DIR}
   LOG_PATH="${LOG_DIR}/estimator_app-${RUN_MODE}-${MODELING}.log"
 
-  INIT_DIR="${PROJECT_PATH}/deeplearning/model_dir/${MODELING}"
-  MODEL_DIR="${PROJECT_PATH}/deeplearning/model_dir/${MODELING}"
+#  INIT_DIR="${PROJECT_PATH}/deeplearning/model_dir/${MODELING}"
+  MODEL_DIR="${PROJECT_PATH}/model_dir/${MODELING}"
+  INFO "MODEL_DIR : ${MODEL_DIR}"
+  ENSURE_DIR ${MODEL_DIR}
+
   INFO "JOB BEGIN ..."
   INFO "${PYTHON} ${JOB_SCRIPT} > ${LOG_PATH} 2>&1"
-  INFO "MODEL_DIR : ${MODEL_DIR}"
 
-  ${PYTHON} ${JOB_SCRIPT} \
-    --run_mode="${RUN_MODE}"  \
-    --modeling=${MODELING}    \
-    --use_gpu=True      \
-    --init_checkpoint="${INIT_DIR}"     \
+  ${PYTHON} ${JOB_SCRIPT}           \
+    --run_mode="${RUN_MODE}"        \
+    --modeling=${MODELING}          \
+    --use_gpu=True                  \
+    --init_checkpoint=None          \
     --model_dir="${MODEL_DIR}"      \
-    --clear_model_dir=False         \
+    --clear_model_dir=True          \
     --is_file_patterns=True         \
-    --train_file=${TRAIN_FILE}    \
-    --train_batch_size=64           \
-    --train_epoch=4                 \
-    --eval_file=${EVAL_FILE}    \
+    --train_file=${TRAIN_FILE}      \
+    --train_batch_size=32           \
+    --train_epoch=2                 \
+    --eval_file=${EVAL_FILE}        \
     --eval_batch_size=32            \
-    --predict_file=${PREDICT_FILE}    \
-    --predict_batch_size=8          \
-    --num_actual_predict_examples=0   \
+    --predict_file=${PREDICT_FILE}  \
+    --predict_batch_size=32         \
+    --num_actual_predict_examples=0 \
     > ${LOG_PATH} 2>&1
 
 INFO "JOB END ..."
