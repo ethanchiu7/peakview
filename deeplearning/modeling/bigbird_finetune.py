@@ -25,6 +25,8 @@ from common import tf_utils
 
 from common import modeling_base
 from common import config_base
+from common.layers import ClassifierLossLayer
+from bigbird.core.modeling import BertModel
 
 
 info_str = """
@@ -83,6 +85,16 @@ class ModelConfig(config_base.ModelConfig):
     self.type_vocab_size = type_vocab_size
     self.initializer_range = initializer_range
     self.max_predictions_per_seq = max_predictions_per_seq
+    # bigbird config
+    self.attention_type = "block_sparse"
+    self.norm_type = 'prenorm'
+    self.block_size = 38
+    self.num_rand_blocks = 8
+    self.use_bias = True
+    self.scope = 'bigbird'
+
+    self.rescale_embedding = False
+    self.use_gradient_checkpointing = False
 
 
 class ModelBuilder(modeling_base.ModelBuilder):
@@ -140,40 +152,22 @@ class ModelBuilder(modeling_base.ModelBuilder):
         masked_lm_weights = features["masked_lm_weights"]
         next_sentence_labels = features["next_sentence_labels"]
 
-        model = BertModel(
-            config=self.model_config,
-            is_training=is_training,
-            input_ids=input_ids,
-            input_mask=input_mask,
-            token_type_ids=segment_ids,
-            use_one_hot_embeddings=use_one_hot_embeddings)
+        model = BertModel(model_config.__dict__)
+        headl = ClassifierLossLayer(
+            model_config.hidden_size, model_config.num_labels,
+            model_config.hidden_dropout_prob,
+            create_initializer(model_config.initializer_range),
+            name=model_config.scope + "/classifier")
 
-        (masked_lm_loss,
-         masked_lm_example_loss, masked_lm_log_probs) = get_masked_lm_output(
-            model_config, model.get_sequence_output(), model.get_embedding_table(),
-            masked_lm_positions, masked_lm_ids, masked_lm_weights)
+        sequence_output, pooled_output = model(input_ids, token_type_ids=segment_ids, training=is_training)
+        logits, log_probs, per_example_loss, batch_mean_loss = headl(pooled_output, labels, is_training)
 
-        (next_sentence_loss, next_sentence_example_loss,
-         next_sentence_log_probs) = get_next_sentence_output(
-            model_config, model.get_pooled_output(), next_sentence_labels)
-        self.pooled_output = model.get_pooled_output()
+        self.pooled_output = pooled_output
 
-        # pretrain loss
-        # batch_mean_loss = masked_lm_loss + next_sentence_loss
-        # batch_item_loss = masked_lm_example_loss + next_sentence_example_loss
-
-        # finetune loss
-        batch_mean_loss = next_sentence_loss
-        batch_item_loss = next_sentence_example_loss
-
-        tf.summary.scalar("next_sentence_loss", next_sentence_loss)
-        tf.summary.scalar("next_sentence_accuracy",
-                          tf_utils.batch_accuracy_binary(next_sentence_log_probs, next_sentence_labels))
+        # tf.summary.scalar("next_sentence_loss", next_sentence_loss)
+        # tf.summary.scalar("next_sentence_accuracy",
+        #                   tf_utils.batch_accuracy_binary(next_sentence_log_probs, next_sentence_labels))
         self.labels = labels
-        self.masked_lm_example_loss = masked_lm_example_loss
-        self.masked_lm_log_probs = masked_lm_log_probs
-        self.next_sentence_example_loss = next_sentence_example_loss
-        self.next_sentence_log_probs = next_sentence_log_probs
         self.next_sentence_labels = next_sentence_labels
         self.batch_mean_loss = batch_mean_loss
 
@@ -209,205 +203,49 @@ class ModelBuilder(modeling_base.ModelBuilder):
 
     def get_metric_ops(self):
         """Computes the loss and accuracy of the modeling."""
-        masked_lm_log_probs = tf.reshape(self.masked_lm_log_probs,
-                                         [-1, self.masked_lm_log_probs.shape[-1]])
-        masked_lm_predictions = tf.argmax(
-            masked_lm_log_probs, axis=-1, output_type=tf.int32)
-        masked_lm_example_loss = tf.reshape(self.masked_lm_example_loss, [-1])
-        masked_lm_ids = tf.reshape(self.masked_lm_ids, [-1])
-        masked_lm_weights = tf.reshape(self.masked_lm_weights, [-1])
-        masked_lm_accuracy = tf.metrics.accuracy(
-            labels=masked_lm_ids,
-            predictions=masked_lm_predictions,
-            weights=masked_lm_weights)
-        masked_lm_mean_loss = tf.metrics.mean(
-            values=masked_lm_example_loss, weights=masked_lm_weights)
+        # masked_lm_log_probs = tf.reshape(self.masked_lm_log_probs,
+        #                                  [-1, self.masked_lm_log_probs.shape[-1]])
+        # masked_lm_predictions = tf.argmax(
+        #     masked_lm_log_probs, axis=-1, output_type=tf.int32)
+        # masked_lm_example_loss = tf.reshape(self.masked_lm_example_loss, [-1])
+        # masked_lm_ids = tf.reshape(self.masked_lm_ids, [-1])
+        # masked_lm_weights = tf.reshape(self.masked_lm_weights, [-1])
+        # masked_lm_accuracy = tf.metrics.accuracy(
+        #     labels=masked_lm_ids,
+        #     predictions=masked_lm_predictions,
+        #     weights=masked_lm_weights)
+        # masked_lm_mean_loss = tf.metrics.mean(
+        #     values=masked_lm_example_loss, weights=masked_lm_weights)
 
-        next_sentence_predictions = tf.cast(self.next_sentence_log_probs >= 0.5, tf.int32)
-        next_sentence_accuracy = tf.metrics.accuracy(
-            labels=self.next_sentence_labels, predictions=next_sentence_predictions)
-        next_sentence_mean_loss = tf.metrics.mean(
-            values=self.next_sentence_example_loss)
-
-        return {
-            "masked_lm_accuracy": masked_lm_accuracy,
-            "masked_lm_loss": masked_lm_mean_loss,
-            "next_sentence_accuracy": next_sentence_accuracy,
-            "next_sentence_loss": next_sentence_mean_loss,
-        }
+        # next_sentence_predictions = tf.cast(self.next_sentence_log_probs >= 0.5, tf.int32)
+        # next_sentence_accuracy = tf.metrics.accuracy(
+        #     labels=self.next_sentence_labels, predictions=next_sentence_predictions)
+        # next_sentence_mean_loss = tf.metrics.mean(
+        #     values=self.next_sentence_example_loss)
+        #
+        # return {
+        #     "masked_lm_accuracy": masked_lm_accuracy,
+        #     "masked_lm_loss": masked_lm_mean_loss,
+        #     "next_sentence_accuracy": next_sentence_accuracy,
+        #     "next_sentence_loss": next_sentence_mean_loss,
+        # }
+        return None
 
     def get_predict_ops(self):
         return {
-            "next_sentence_labels": self.next_sentence_labels,
-            "next_sentence_log_probs": self.next_sentence_log_probs,
-            "next_sentence_example_loss": self.next_sentence_example_loss,
+            # "next_sentence_labels": self.next_sentence_labels,
+            # "next_sentence_log_probs": self.next_sentence_log_probs,
+            # "next_sentence_example_loss": self.next_sentence_example_loss,
         }
 
     def get_training_hooks(self):
         training_hooks = [
-            tf.train.LoggingTensorHook({"next_sentence_accuracy": tf_utils.batch_accuracy_binary(
-                self.next_sentence_log_probs, self.next_sentence_labels),
-                                        "batch_mean_loss": self.batch_mean_loss
-                                        }, every_n_iter=100)
+            # tf.train.LoggingTensorHook({"next_sentence_accuracy": tf_utils.batch_accuracy_binary(
+            #     self.next_sentence_log_probs, self.next_sentence_labels),
+            #                             "batch_mean_loss": self.batch_mean_loss
+            #                             }, every_n_iter=100)
         ]
         return training_hooks
-
-
-class BertModel(object):
-  """BERT model ("Bidirectional Encoder Representations from Transformers").
-
-  Example usage:
-
-  ```python
-  # Already been converted into WordPiece token ids
-  input_ids = tf.constant([[31, 51, 99], [15, 5, 0]])
-  input_mask = tf.constant([[1, 1, 1], [1, 1, 0]])
-  token_type_ids = tf.constant([[0, 0, 1], [0, 2, 0]])
-
-  config = modeling.BertConfig(vocab_size=32000, hidden_size=512,
-    num_hidden_layers=8, num_attention_heads=6, intermediate_size=1024)
-
-  model = modeling.BertModel(config=config, is_training=True,
-    input_ids=input_ids, input_mask=input_mask, token_type_ids=token_type_ids)
-
-  label_embeddings = tf.get_variable(...)
-  pooled_output = model.get_pooled_output()
-  logits = tf.matmul(pooled_output, label_embeddings)
-  ...
-  ```
-  """
-
-  def __init__(self,
-               config: ModelConfig,
-               is_training,
-               input_ids,
-               input_mask=None,
-               token_type_ids=None,
-               use_one_hot_embeddings=False,
-               scope=None):
-    """Constructor for BertModel.
-
-    Args:
-      config: `BertConfig` instance.
-      is_training: bool. true for training model, false for eval model. Controls
-        whether dropout will be applied.
-      input_ids: int32 Tensor of shape [batch_size, seq_length].
-      input_mask: (optional) int32 Tensor of shape [batch_size, seq_length].
-      token_type_ids: (optional) int32 Tensor of shape [batch_size, seq_length].
-      use_one_hot_embeddings: (optional) bool. Whether to use one-hot word
-        embeddings or tf.embedding_lookup() for the word embeddings.
-      scope: (optional) variable scope. Defaults to "bert".
-
-    Raises:
-      ValueError: The config is invalid or one of the input tensor shapes
-        is invalid.
-    """
-    config = copy.deepcopy(config)
-    if not is_training:
-      config.hidden_dropout_prob = 0.0
-      config.attention_probs_dropout_prob = 0.0
-
-    input_shape = get_shape_list(input_ids, expected_rank=2)
-    batch_size = input_shape[0]
-    seq_length = input_shape[1]
-
-    if input_mask is None:
-      input_mask = tf.ones(shape=[batch_size, seq_length], dtype=tf.int32)
-
-    if token_type_ids is None:
-      token_type_ids = tf.zeros(shape=[batch_size, seq_length], dtype=tf.int32)
-
-    with tf.variable_scope(scope, default_name="bert"):
-      with tf.variable_scope("embeddings"):
-        # Perform embedding lookup on the word ids.
-        (self.embedding_output, self.embedding_table) = embedding_lookup(
-            input_ids=input_ids,
-            vocab_size=config.vocab_size,
-            embedding_size=config.hidden_size,
-            initializer_range=config.initializer_range,
-            word_embedding_name="word_embeddings",
-            use_one_hot_embeddings=use_one_hot_embeddings)
-
-        # Add positional embeddings and token type embeddings, then layer
-        # normalize and perform dropout.
-        self.embedding_output = embedding_postprocessor(
-            input_tensor=self.embedding_output,
-            use_token_type=True,
-            token_type_ids=token_type_ids,
-            token_type_vocab_size=config.type_vocab_size,
-            token_type_embedding_name="token_type_embeddings",
-            use_position_embeddings=True,
-            position_embedding_name="position_embeddings",
-            initializer_range=config.initializer_range,
-            max_position_embeddings=config.max_position_embeddings,
-            dropout_prob=config.hidden_dropout_prob)
-
-      with tf.variable_scope("encoder"):
-        # This converts a 2D mask of shape [batch_size, seq_length] to a 3D
-        # mask of shape [batch_size, seq_length, seq_length] which is used
-        # for the attention scores.
-        attention_mask = create_attention_mask_from_input_mask(
-            input_ids, input_mask)
-
-        # Run the stacked transformer.
-        # `sequence_output` shape = [batch_size, seq_length, hidden_size].
-        self.all_encoder_layers = transformer_model(
-            input_tensor=self.embedding_output,
-            attention_mask=attention_mask,
-            hidden_size=config.hidden_size,
-            num_hidden_layers=config.num_hidden_layers,
-            num_attention_heads=config.num_attention_heads,
-            intermediate_size=config.intermediate_size,
-            intermediate_act_fn=get_activation(config.hidden_act),
-            hidden_dropout_prob=config.hidden_dropout_prob,
-            attention_probs_dropout_prob=config.attention_probs_dropout_prob,
-            initializer_range=config.initializer_range,
-            do_return_all_layers=True)
-
-      self.sequence_output = self.all_encoder_layers[-1]
-      # The "pooler" converts the encoded sequence tensor of shape
-      # [batch_size, seq_length, hidden_size] to a tensor of shape
-      # [batch_size, hidden_size]. This is necessary for segment-level
-      # (or segment-pair-level) classification tasks where we need a fixed
-      # dimensional representation of the segment.
-      with tf.variable_scope("pooler"):
-        # We "pool" the model by simply taking the hidden state corresponding
-        # to the first token. We assume that this has been pre-trained
-        first_token_tensor = tf.squeeze(self.sequence_output[:, 0:1, :], axis=1)
-        self.pooled_output = tf.layers.dense(
-            first_token_tensor,
-            config.hidden_size,
-            activation=tf.tanh,
-            kernel_initializer=create_initializer(config.initializer_range))
-
-  def get_pooled_output(self):
-    return self.pooled_output
-
-  def get_sequence_output(self):
-    """Gets final hidden layer of encoder.
-
-    Returns:
-      float Tensor of shape [batch_size, seq_length, hidden_size] corresponding
-      to the final hidden of the transformer encoder.
-    """
-    return self.sequence_output
-
-  def get_all_encoder_layers(self):
-    return self.all_encoder_layers
-
-  def get_embedding_output(self):
-    """Gets output of the embedding lookup (i.e., input to the transformer).
-
-    Returns:
-      float Tensor of shape [batch_size, seq_length, hidden_size] corresponding
-      to the output of the embedding layer, after summing the word
-      embeddings with the positional embeddings and the token type embeddings,
-      then performing layer normalization. This is the input to the transformer.
-    """
-    return self.embedding_output
-
-  def get_embedding_table(self):
-    return self.embedding_table
 
 
 def gelu(x):
