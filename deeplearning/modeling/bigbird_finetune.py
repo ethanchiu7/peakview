@@ -41,7 +41,7 @@ class ModelConfig(config_base.ModelConfig):
 
   def __init__(self, vocab_size=512, num_labels=2, max_sentence_len=128, dist_bucket_boundaries=None, hidden_size=768,
                num_hidden_layers=12, num_attention_heads=12, intermediate_size=3072, hidden_act="gelu",
-               hidden_dropout_prob=0.1, attention_probs_dropout_prob=0.1, max_position_embeddings=512,
+               hidden_dropout_prob=0.1, attention_probs_dropout_prob=0.1, max_position_embeddings=1024,
                type_vocab_size=3, initializer_range=0.02, max_predictions_per_seq=15):
     """Constructs BertConfig.
 
@@ -88,7 +88,7 @@ class ModelConfig(config_base.ModelConfig):
     # bigbird config
     self.attention_type = "block_sparse"
     self.norm_type = 'prenorm'
-    self.block_size = 38
+    self.block_size = 64
     self.num_rand_blocks = 8
     self.use_bias = True
     self.scope = 'bigbird'
