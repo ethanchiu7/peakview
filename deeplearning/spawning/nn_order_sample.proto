@@ -2,7 +2,7 @@ syntax = "proto2";
 
 package pipeline;
 
-option java_package = "com.didichuxing.rprank.fe.jobs.pipeline";
+option java_package = "com.xxchuxing.rprank.fe.jobs.pipeline";
 option java_outer_classname = "NNOrderSampleProtos";
 
 message NNOrderSample {
