@@ -205,11 +205,13 @@ def normalize_with_moments(x, axes=None, epsilon=1e-8):
     return x_normed
 
 
-def batch_accuracy_binary(prob, label):
+def batch_accuracy_binary(prob, label, weight=None):
     prob = tf.reshape(prob, [-1])
     label = tf.reshape(label, [-1])
-    predictions = tf.cast(prob >= 0.5, tf.float32)
+    predictions = tf.cast(prob > 0.5, tf.float32)
     accuracy = tf.cast(tf.equal(predictions, label), tf.float32)
+    if weight is not None:
+        accuracy = tf.boolean_mask(accuracy, weight > 0)
     return tf.reduce_mean(accuracy)
 
 
