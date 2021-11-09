@@ -206,8 +206,8 @@ class ModelBuilder(modeling_base.ModelBuilder):
 
 
         # --------- 约束条件 做训练 和 预测 [B]
-        close_greater_ma60 = tf.cast(close[:, -1] >= sma_60[:, -1], tf.float32)
-        dif_greater_zero = tf.cast(macd_dif[:, -1] > 0, tf.float32)
+        # close_greater_ma60 = tf.cast(close[:, -1] >= sma_60[:, -1], tf.float32)
+        # dif_greater_zero = tf.cast(macd_dif[:, -1] > 0, tf.float32)
         volume_greater_zero = tf.cast(volume[:, -1] > 0, tf.float32)
 
         # 最近10日存在量异常
@@ -218,9 +218,8 @@ class ModelBuilder(modeling_base.ModelBuilder):
         volume_variance_anomaly = tf.cast(volume_variance_anomaly > 0, tf.float32)
 
         # merge 条件
-        # TODO by Ethan 2021-11-8, 周一, 15:4:  multi to pred
-        sample_available = close_greater_ma60 * dif_greater_zero
-        sample_available *= volume_greater_zero
+        # sample_available = close_greater_ma60 * dif_greater_zero
+        sample_available = volume_greater_zero
         sample_available *= volume_variance_anomaly
 
         profit_loss_weights = tf.abs(profit) * loss_w * sample_available * 100
