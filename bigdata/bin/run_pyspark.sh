@@ -3,18 +3,48 @@ source /etc/profile
 source /etc/bashrc
 source /home/xiaoju/.bashrc
 
+#if [ $# -eq 0 ];then
+#    echo "Usage: $0 run_date"
+#    exit 1
+#fi
+
+while getopts ":d:p:h" optname
+do
+    case "${optname}" in
+       "d")
+        job_dir="${OPTARG}"
+        ;;
+       "p")
+        script_params="${OPTARG}"
+        ;;
+       ":")
+        echo "No argument value for option $OPTARG"
+        exit
+        ;;
+       "?")
+        echo "Unknown option $OPTARG"
+        exit
+        ;;
+       *)
+        echo "Unknown error while processing options"
+        exit
+        ;;
+    esac
+    #echo "option index is $OPTIND"
+done
+echo "job_dir: ${job_dir}"
+echo "script_params: ${script_params}"
+job_file="${PROJECT_PATH}/bigdata/${job_dir}/main.py"
+test -f ${job_file}
+if [ ! $? -eq 0 ]; then
+    echo "job_file not exist: ${job_file}"
+    exit 1
+fi
+
 PROJECT_PATH=$(readlink -f $0 | xargs dirname | xargs dirname | xargs dirname)
 SCIPT_DIR=$(readlink -f $0 | xargs dirname | xargs dirname)
 cd ${SCIPT_DIR}
 QUEUE=your.queue.name
-
-if [ $# -eq 0 ];then
-    echo "Usage: $0 run_date"
-    exit 1
-fi
-script_params=$@
-job_dir="job_dir_example"
-job_file="${PROJECT_PATH}/bigdata/${job_dir}/pyspark_example.py"
 
 cd ${PROJECT_PATH}/bigdata/${job_dir}
 rm -f ${PROJECT_PATH}/bigdata/${job_dir}/${job_dir}.zip
