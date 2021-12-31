@@ -3,11 +3,16 @@ source /etc/profile
 source /etc/bashrc
 source /home/xiaoju/.bashrc
 
-#if [ $# -eq 0 ];then
-#    echo "Usage: $0 run_date"
-#    exit 1
-#fi
-
+:<<!
+    使用方法：
+        -d job_dir :
+                定义python执行文件的路径，其中 job_dir/main.py 为主程序
+                在这个目录可以定义其他python文件模块 在main.py中直接import
+        -p script_params:
+                定义传递给 job_dir/main.py 的参数 可以是多个
+        例如:
+                bash run_pyspark.sh -d job_dir_example -p "1 2 3 20211118"
+!
 while getopts ":d:p:h" optname
 do
     case "${optname}" in
