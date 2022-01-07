@@ -1,13 +1,15 @@
 #!/bin/bash
 source /etc/profile
 source /etc/bashrc
-source /home/xiaoju/.bashrc
 
 :<<!
     使用方法：
         -d job_dir :
                 定义python执行文件的路径，其中 job_dir/main.py 为主程序
                 在这个目录可以定义其他python文件模块 在main.py中直接import
+                必须 创建 main.py 作为spark主程序
+                (Option) job_dir 目录下可以 存在其他 *.py 模块 便于main.py中import
+                本脚本 会自动打包 job_dir 目录下全部 *.py 并分发给 Spark集群进行分布式计算
         -p script_params:
                 定义传递给 job_dir/main.py 的参数 可以是多个
         例如:
@@ -37,9 +39,12 @@ do
     esac
     #echo "option index is $OPTIND"
 done
+PROJECT_PATH=$(readlink -f $0 | xargs dirname | xargs dirname | xargs dirname)
+job_file="${PROJECT_PATH}/bigdata/${job_dir}/main.py"
 echo "job_dir: ${job_dir}"
 echo "script_params: ${script_params}"
-job_file="${PROJECT_PATH}/bigdata/${job_dir}/main.py"
+echo "job_file: ${job_file}"
+
 test -f ${job_file}
 if [ ! $? -eq 0 ]; then
     echo "job_file not exist: ${job_file}"
