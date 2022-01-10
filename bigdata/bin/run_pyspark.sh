@@ -51,9 +51,9 @@ if [ ! $? -eq 0 ]; then
     exit 1
 fi
 
-PROJECT_PATH=$(readlink -f $0 | xargs dirname | xargs dirname | xargs dirname)
 SCIPT_DIR=$(readlink -f $0 | xargs dirname | xargs dirname)
 cd ${SCIPT_DIR}
+
 QUEUE=your.queue.name
 
 cd ${PROJECT_PATH}/bigdata/${job_dir}
@@ -65,7 +65,7 @@ remote_python="/your/hdfs/python/python3.6.9.tgz#python3.6.9"
 PYSPARK_PYTHON="./python3.6.9/bin/python3"
 
 export PYSPARK_DRIVER_PYTHON=${PYSPARK_DRIVER_PYTHON} \
-    && export PYTHONPATH="/your/local/python3.6.9/lib/python3.6/site-packages:${PROJECT_PATH}/bigdata" \
+    && export PYTHONPATH="${PYTHONPATH}:${PROJECT_PATH}/bigdata" \
     && export PYSPARK_PYTHON=${PYSPARK_PYTHON}   \
     && source /etc/profile  \
     && spark-submit \
