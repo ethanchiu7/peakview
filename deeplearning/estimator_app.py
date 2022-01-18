@@ -19,7 +19,7 @@ import enum
 import json
 import numpy as np
 import importlib
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
 # from common import config_base
 # from common import modeling_base
 from config.estimator_config import RunningConfig
@@ -37,40 +37,45 @@ running_config = RunningConfig()
 # ====================================================================
 
 
-class RunMode(enum.Enum):
-    TRAIN = 0
-    EVAL = 1
-    TRAIN_WITH_EVAL = 2
-    PREDICT = 3
+class RunMode(object):
+    TRAIN = "TRAIN"
+    EVAL = "EVAL"
+    TRAIN_WITH_EVAL = "TRAIN_WITH_EVAL"
+    PREDICT = "PREDICT"
+    SAVE_PB = "SAVE_PB"
+    SAVE_MODEL = "SAVE_MODEL"
 
 
 class LogVerbosity(enum.Enum):
-    DEBUG = tf.compat.v1.logging.DEBUG
-    INFO = tf.compat.v1.logging.INFO
-    WARN = tf.compat.v1.logging.WARN
-    ERROR = tf.compat.v1.logging.ERROR
-    FATAL = tf.compat.v1.logging.FATAL
+    DEBUG = tf.logging.DEBUG
+    INFO = tf.logging.INFO
+    WARN = tf.logging.WARN
+    ERROR = tf.logging.ERROR
+    FATAL = tf.logging.FATAL
 
 
 def define_flags():
     ## ------  Required parameters
-    flags.DEFINE_enum("run_mode", RunMode.TRAIN.name, [e.name for e in RunMode],
+    flags.DEFINE_enum("run_mode", RunMode.TRAIN, [att for att in dir(RunMode()) if not att.startswith("__")],
                       "Run this py mode, TRAIN/EVAL/TRAIN_WITH_EVAL/PREDICT")
     flags.DEFINE_enum("log_verbosity", LogVerbosity.INFO.name, [e.name for e in LogVerbosity],
                       "tf logging set_verbosity, DEBUG/INFO/WARN/ERROR/FATAL")
-    flags.DEFINE_string("modeling", "bert_finetune", "define how to build current modeling")
+    flags.DEFINE_string("modeling", "often_route_pairwise_v1", "define how to build current modeling")
 
     flags.DEFINE_boolean("use_gpu", False, "If use GPU.")
 
     flags.DEFINE_string("model_dir", None, "The output directory where the modeling checkpoints will be written.")
     flags.DEFINE_string("init_checkpoint", None, "Initial checkpoint (usually from a pre-trained modeling).")
 
-    flags.DEFINE_boolean("clear_model_dir", running_config.clear_model_dir, "If remove model_dir.")
+    flags.DEFINE_boolean("clean_model_dir", True, "If remove model_dir.")
     flags.DEFINE_integer("save_checkpoints_steps", running_config.save_checkpoints_steps,
                          "How often to save the modeling checkpoint.")
 
     flags.DEFINE_boolean("is_file_patterns", running_config.is_file_patterns,
                          "If train_file / eval_file / predict_file is file patterns.")
+    # is_hdfs_file
+    flags.DEFINE_boolean("is_hdfs_file", running_config.is_file_patterns,
+                         "If True, inputs should start with viewfs://ClusterNMG .")
     flags.DEFINE_string("train_file", running_config.train_file,
                         "Input TF example files (can be a glob or comma separated).")
     flags.DEFINE_integer("train_batch_size", 4, "Total batch size for training.")
@@ -81,10 +86,12 @@ def define_flags():
                         "Input TF example files (can be a glob or comma separated).")
     flags.DEFINE_integer("eval_batch_size", 8, "Total batch size for eval.")
 
+    flags.DEFINE_boolean("attack_predict", False, "If attack predict.")
     flags.DEFINE_string("predict_file", running_config.predict_file,
                         "Input TF example files (can be a glob or comma separated).")
     flags.DEFINE_integer("predict_batch_size", 10, "Total batch size for predict.")
-    flags.DEFINE_integer("num_actual_predict_examples", 2000, "The num of examples during predict mode.")
+    flags.DEFINE_string("predict_result_file", None, "predict_result_file save path")
+    flags.DEFINE_integer("num_actual_predict_examples", 1000, "The num of examples during predict mode.")
 
     # learning rate polynomial_decay
     # flags.DEFINE_integer("decay_steps", 2000, "polynomial_decay args : decay_steps")
@@ -93,7 +100,7 @@ def define_flags():
     # flags.DEFINE_integer("warmup_steps", 1000, "polynomial_decay args : decay_steps")
 
 
-def model_fn_builder(init_checkpoint):
+def model_fn_builder(init_checkpoint, model_builder):
     """Returns `model_fn` closure for GPUEstimator."""
     is_real_example = 1
 
@@ -119,42 +126,36 @@ def model_fn_builder(init_checkpoint):
                      is passed to Estimator as its `config` parameter, or a default
                      value. Allows setting up things in your `model_fn` based on
                      configuration such as `num_ps_replicas`, or `model_dir`."""
-        to_import_module = "modeling.{}".format(FLAGS.modeling)
-        print("======== import : {}".format(to_import_module))
-        modeling = importlib.import_module(to_import_module)
-        # network_config: config_base.NetworkConfig = modeling.NetworkConfig()
-        model_builder = modeling.ModelBuilder()
 
-        tf.compat.v1.logging.info("****** {} ****** Features".format(log_prefix))
+        tf.logging.info("****** {} ****** Features".format(log_prefix))
         for name in sorted(features.keys()):
-            tf.compat.v1.logging.info(
+            tf.logging.info(
                 "****** %s ******  name = %s, shape = %s" % (log_prefix, name, features[name].shape))
 
         is_training = (mode == tf.estimator.ModeKeys.TRAIN)
-        with_labels = (mode != tf.estimator.ModeKeys.PREDICT)
-        model_builder.build_model(features, labels, is_training, with_labels)
+        model_builder.build_model(features, labels, is_training)
 
-        tvars = tf.compat.v1.trainable_variables()
-        tf.compat.v1.logging.info("****** {} ****** global_variables len: {}, local_variables len: {}"
+        tvars = tf.trainable_variables()
+        tf.logging.info("****** {} ****** global_variables len: {}, local_variables len: {}"
                                   .format(log_prefix,
-                                          len(tf.compat.v1.get_collection(tf.compat.v1.GraphKeys.GLOBAL_VARIABLES)),
-                                          len(tf.compat.v1.get_collection(tf.compat.v1.GraphKeys.LOCAL_VARIABLES))))
-        tf.compat.v1.logging.info("****** {} ****** trainable_variables len: {}, trainable_variables parameter size: {}"
+                                          len(tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)),
+                                          len(tf.get_collection(tf.GraphKeys.LOCAL_VARIABLES))))
+        tf.logging.info("****** {} ****** trainable_variables len: {}, trainable_variables parameter size: {}"
                                   .format(log_prefix, len(tvars), tf_utils.count_variable_parameter_size(tvars)))
-        if init_checkpoint and tf.compat.v1.train.checkpoint_exists(init_checkpoint):
+        if init_checkpoint and tf.train.checkpoint_exists(init_checkpoint):
             (assignment_map, trainable_variable_in_ckpt, trainable_variable_not_in_ckpt, ckpt_variables_in_trainable,
              ckpt_variables_not_in_trainable) \
                 = model_builder.get_assignment_map_from_checkpoint(tvars, init_checkpoint, verbose=True)
             if len(assignment_map) > 0:
-                tf.compat.v1.logging.info(
+                tf.logging.info(
                     "****** {} ****** init some variables from other checkpoint: {}".format(log_prefix,
                                                                                             str(init_checkpoint)))
-                tf.compat.v1.train.init_from_checkpoint(init_checkpoint, assignment_map)
+                tf.train.init_from_checkpoint(init_checkpoint, assignment_map)
             else:
-                tf.compat.v1.logging.info(
+                tf.logging.info(
                     "****** {} ****** len(assignment_map) <= 0, do not init_from_checkpoint".format(log_prefix))
         else:
-            tf.compat.v1.logging.info(
+            tf.logging.info(
                 "****** {} ****** init_checkpoint does not exist: {}".format(log_prefix, str(init_checkpoint)))
 
         output_spec = None
@@ -181,12 +182,6 @@ def model_fn_builder(init_checkpoint):
 
 
 def main(_):
-    to_import_module = "modeling.{}".format(FLAGS.modeling)
-    print("======== import : {}".format(to_import_module))
-    modeling = importlib.import_module(to_import_module)
-    # network_config: config_base.NetworkConfig = modeling.NetworkConfig()
-    model_builder = modeling.ModelBuilder()
-    name_to_features = model_builder.get_name_to_features()
 
     if not FLAGS.model_dir:
         FLAGS.model_dir = os.path.join(PROJECT_DIR, "model_dir", FLAGS.modeling)
@@ -223,21 +218,22 @@ def main(_):
     [BEGIN FILE]: {}
     | ================================================================|
     """.format(PROJECT_DIR, FLAGS.modeling, FLAGS.run_mode, FLAGS.model_dir, FLAGS.init_checkpoint, __file__)
-    tf.compat.v1.logging.info(estimator_info_str)
+    tf.logging.info(estimator_info_str)
 
-    if FLAGS.clear_model_dir:
-        tf.compat.v1.logging.info("DeleteRecursively: {}".format(FLAGS.model_dir))
-        tf.compat.v1.gfile.DeleteRecursively(FLAGS.model_dir)
-    tf.compat.v1.gfile.MakeDirs(FLAGS.model_dir)
+    if FLAGS.clean_model_dir and FLAGS.run_mode != RunMode.PREDICT:
+        tf.logging.info("DeleteRecursively: {}".format(FLAGS.model_dir))
+        tf.gfile.DeleteRecursively(FLAGS.model_dir)
+    tf.gfile.MakeDirs(FLAGS.model_dir)
 
     def get_input_fn_train():
         input_file_paths = dataset_builder.DataSetBuilder.pattern_to_files(FLAGS.train_file,
-                                                                           is_file_patterns=FLAGS.is_file_patterns)
-        tf.compat.v1.logging.info("*** Input Files {} For Train ***".format(len(input_file_paths)))
+                                                                           is_file_patterns=FLAGS.is_file_patterns,
+                                                                           is_hdfs_file=FLAGS.is_hdfs_file)
+        tf.logging.info("\n*** Input Files {} For Train ***".format(len(input_file_paths)))
         print('\n'.join(input_file_paths))
         return dataset_builder.DataSetBuilder.get_tfrecord_input_fn(input_files=input_file_paths,
                                                                     name_to_features=model_builder.get_name_to_features(
-                                                                        with_labels=True),
+                                                                        is_training=True),
                                                                     batch_size=FLAGS.train_batch_size,
                                                                     epoch=FLAGS.train_epoch,
                                                                     shuffle_input_files=FLAGS.shuffle_train_files,
@@ -245,12 +241,13 @@ def main(_):
 
     def get_eval_input_fn():
         input_file_paths = dataset_builder.DataSetBuilder.pattern_to_files(FLAGS.eval_file,
-                                                                           is_file_patterns=FLAGS.is_file_patterns)
-        tf.compat.v1.logging.info("*** Input Files {} For Eval ***".format(len(input_file_paths)))
+                                                                           is_file_patterns=FLAGS.is_file_patterns,
+                                                                           is_hdfs_file=FLAGS.is_hdfs_file)
+        tf.logging.info("\n*** Input Files {} For Eval ***".format(len(input_file_paths)))
         print('\n'.join(input_file_paths))
         return dataset_builder.DataSetBuilder.get_tfrecord_input_fn(input_files=input_file_paths,
                                                                     name_to_features=model_builder.get_name_to_features(
-                                                                        with_labels=True),
+                                                                        is_training=True),
                                                                     batch_size=FLAGS.eval_batch_size,
                                                                     epoch=1,
                                                                     shuffle_input_files=False,
@@ -258,19 +255,24 @@ def main(_):
 
     def get_predict_input_fn():
         input_file_paths = dataset_builder.DataSetBuilder.pattern_to_files(FLAGS.predict_file,
-                                                                           is_file_patterns=FLAGS.is_file_patterns)
-        tf.compat.v1.logging.info("*** Input Files {} For Predict ***".format(input_file_paths))
+                                                                           is_file_patterns=FLAGS.is_file_patterns,
+                                                                           is_hdfs_file=FLAGS.is_hdfs_file)
+        tf.logging.info("\n*** Input Files {} For Predict ***".format(input_file_paths))
         print('\n'.join(input_file_paths))
         return dataset_builder.DataSetBuilder.get_tfrecord_input_fn(input_files=input_file_paths,
                                                                     name_to_features=model_builder.get_name_to_features(
-                                                                        with_labels=False),
+                                                                        is_training=False),
                                                                     batch_size=FLAGS.predict_batch_size,
                                                                     epoch=1,
                                                                     shuffle_input_files=False,
                                                                     num_cpu_threads=1)
 
     # model_fn
-    model_fn = model_fn_builder(init_checkpoint=FLAGS.init_checkpoint)
+    to_import_module = "modeling.{}".format(FLAGS.modeling)
+    print("======== import : {}".format(to_import_module))
+    modeling = importlib.import_module(to_import_module)
+    model_builder = modeling.ModelBuilder(model_dir=FLAGS.model_dir)
+    model_fn = model_fn_builder(init_checkpoint=FLAGS.init_checkpoint, model_builder=model_builder)
 
     # model_params
     model_params = None
@@ -278,7 +280,7 @@ def main(_):
     # run_config
     dist_strategy = None
     if FLAGS.use_gpu:
-        tf.compat.v1.logging.info("***** use_gpu is True, set dist_strategy *****")
+        tf.logging.info("\n***** use_gpu is True, set dist_strategy *****")
         # dist_strategy = tf.distribute.experimental.MultiWorkerMirroredStrategy()
         # dist_strategy = tf.distribute.MirroredStrategy(devices=None, cross_device_ops=tf.distribute.HierarchicalCopyAllReduce())
         dist_strategy = tf.distribute.MirroredStrategy(devices=None, cross_device_ops=tf.distribute.NcclAllReduce())
@@ -302,25 +304,25 @@ def main(_):
         warm_start_from=None)
 
     # do_train
-    if FLAGS.run_mode == RunMode.TRAIN.name:
+    if FLAGS.run_mode == RunMode.TRAIN:
         input_fn_train = get_input_fn_train()
-        tf.compat.v1.logging.info("***** Running training *****")
-        tf.compat.v1.logging.info("  Batch size = %d", FLAGS.train_batch_size)
+        tf.logging.info("\n***** Running training *****")
+        print("  Batch size = %d", FLAGS.train_batch_size)
         estimator.train(input_fn=input_fn_train, steps=None)
 
     # do_eval
     output_eval_file = os.path.join(FLAGS.model_dir, "eval_results.txt")
-    if FLAGS.run_mode == RunMode.EVAL.name:
-        tf.compat.v1.logging.info("***** Running evaluation *****")
-        tf.compat.v1.logging.info("  Batch size = %d", FLAGS.eval_batch_size)
+    if FLAGS.run_mode == RunMode.EVAL:
+        tf.logging.info("\n***** Running evaluation *****")
+        print("  Batch size = %d", FLAGS.eval_batch_size)
         result = estimator.evaluate(input_fn=get_eval_input_fn())
         tf_utils.write_eval_result(result, output_eval_file)
 
     # do_train_with_eval
-    if FLAGS.run_mode == RunMode.TRAIN_WITH_EVAL.name:
-        tf.compat.v1.logging.info("***** Running training with evaluation *****")
-        tf.compat.v1.logging.info("Train Batch size = %d", FLAGS.train_batch_size)
-        tf.compat.v1.logging.info("Eval Batch size = %d", FLAGS.eval_batch_size)
+    if FLAGS.run_mode == RunMode.TRAIN_WITH_EVAL:
+        tf.logging.info("\n***** Running training with evaluation *****")
+        print("Train Batch size = %d", FLAGS.train_batch_size)
+        print("Eval Batch size = %d", FLAGS.eval_batch_size)
         train_spec = tf.estimator.TrainSpec(input_fn=get_input_fn_train())
         eval_spec = tf.estimator.EvalSpec(input_fn=get_eval_input_fn())
         result = tf.estimator.train_and_evaluate(estimator, train_spec, eval_spec)
@@ -328,25 +330,30 @@ def main(_):
 
     # do_predict
     output_predict_file = os.path.join(FLAGS.model_dir, "predict_results.txt")
-    if FLAGS.run_mode == RunMode.PREDICT.name:
-        tf.compat.v1.logging.info("***** Running prediction *****")
-        tf.compat.v1.logging.info("  Batch size = %d", FLAGS.predict_batch_size)
+    if FLAGS.predict_result_file:
+        output_predict_file = FLAGS.predict_result_file
+    utils.DirUtils.ensure_dir(os.path.dirname(output_predict_file))
+    if FLAGS.run_mode == RunMode.PREDICT:
+        tf.logging.info("\n***** Running prediction *****")
+        print("  Batch size = %d", FLAGS.predict_batch_size)
         predict_result_it = estimator.predict(input_fn=get_predict_input_fn(), yield_single_examples=True)
         tf_utils.parse_and_record_predict_result(predict_result_it, output_predict_file,
-                                                 FLAGS.num_actual_predict_examples)
+                                                 FLAGS.num_actual_predict_examples, to_csv=True, csv_sep=" ")
 
-    tf.compat.v1.logging.info("""
+    tf.logging.info("""
     | ================================================================|
     [END FILE]: {}
+    Thanks For Your Using Peakview !
+    Author By Ethan Chiu
     | ================================================================|
     """.format(__file__))
     exit(0)
 
 
 if __name__ == "__main__":
-    flags = tf.compat.v1.flags
+    flags = tf.flags
     FLAGS = flags.FLAGS
     define_flags()
-    tf.compat.v1.logging.set_verbosity(LogVerbosity[FLAGS.log_verbosity].value)
-    tf.compat.v1.app.run()
+    tf.logging.set_verbosity(LogVerbosity[FLAGS.log_verbosity].value)
+    tf.app.run()
 

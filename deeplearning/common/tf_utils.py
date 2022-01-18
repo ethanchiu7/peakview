@@ -5,7 +5,7 @@
     Site    :   
     Suggestion  ：
     Description :
-    File    :   tf_utils.py
+    File    :   tf_util.py
     Software    :   PyCharm
 """
 import six
@@ -205,13 +205,12 @@ def normalize_with_moments(x, axes=None, epsilon=1e-8):
     return x_normed
 
 
-def batch_accuracy_binary(prob, label, weight=None):
+def batch_accuracy_binary(prob, label, weights):
     prob = tf.reshape(prob, [-1])
     label = tf.reshape(label, [-1])
-    predictions = tf.cast(prob > 0.5, tf.float32)
+    predictions = tf.cast(prob >= 0.5, tf.float32)
     accuracy = tf.cast(tf.equal(predictions, label), tf.float32)
-    if weight is not None:
-        accuracy = tf.boolean_mask(accuracy, weight > 0)
+    accuracy = accuracy * weights
     return tf.reduce_mean(accuracy)
 
 
@@ -262,7 +261,8 @@ def write_eval_result(result, output_eval_file):
             writer.write("%s = %s\n" % (key, str(result[key])))
 
 
-def parse_and_record_predict_result(predict_result_it, output_predict_file, num_actual_predict_examples=10):
+def parse_and_record_predict_result(predict_result_it, output_predict_file, num_actual_predict_examples=None,
+                                    to_csv=True, csv_sep=" "):
     """
     output_predict_file = os.path.join(FLAGS.model_dir, "predict_results.txt")
     if FLAGS.run_mode == RunMode.PREDICT.value:
@@ -275,18 +275,82 @@ def parse_and_record_predict_result(predict_result_it, output_predict_file, num_
     :param num_actual_predict_examples:
     :return:
     """
+
+    def parse_value(v):
+        if isinstance(v, bytes):
+            return v.decode()
+        elif isinstance(v, np.ndarray):
+            return str(v.item())
+        else:
+            return str(v)
+
     with tf.gfile.GFile(output_predict_file, "w") as writer:
         num_written_lines = 0
         tf.logging.info("***** Predict results *****\n  output_predict_file: {}".format(output_predict_file))
         for (i, prediction) in enumerate(predict_result_it):
-            if num_actual_predict_examples > 0 and num_written_lines >= num_actual_predict_examples:
+            if i % 100000 == 0:
+                print("---- i : {} ----".format(i))
+            if num_actual_predict_examples and num_actual_predict_examples > 0 and num_written_lines >= num_actual_predict_examples:
                 break
-            if not np.isnan(prediction["batch_sample_loss"].item()):
-                continue
-            output_line = json.dumps(convert_ndarrays_to_lists(prediction), ensure_ascii=False)
-            output_line += "\n"
-            writer.write(output_line)
+            if to_csv:
+                if i == 0:
+                    writer.write(csv_sep.join([k for k in prediction]) + "\n")
+                writer.write(csv_sep.join([parse_value(prediction[k]) for k in prediction]) + "\n")
+            else:
+                output_line = json.dumps(convert_ndarrays_to_lists(prediction), ensure_ascii=False)
+                output_line += "\n"
+                writer.write(output_line)
             num_written_lines += 1
+
+
+def deepfm(embedded, seq_mask=None):
+    """
+
+    :param embedded: [batch, seq, embedding]
+    :param seq_mask: [batch, seq]
+    :return:
+    """
+    if seq_mask:
+        embedded = tf.multiply(embedded, seq_mask)
+    # [batch, embedding_size]
+    left = tf.square(tf.reduce_sum(embedded, 1))
+    # [batch, embedding_size]
+    right = tf.reduce_sum(tf.square(embedded), 1)
+    # [batch, embedding_size]
+    fm = 0.5 * (left - right)
+    return fm
+
+
+def scale_l2_2d(x, norm_length):
+    """
+
+    :param x: 2D tensor
+    :param norm_length:
+    :return:
+    """
+    alpha = tf.reduce_max(tf.abs(x), 1, keep_dims=True) + 1e-12
+    l2_norm = alpha * tf.sqrt(
+        tf.reduce_sum(tf.pow(x / alpha, 2), 1, keep_dims=True) + 1e-6)
+    x_unit = x / l2_norm
+    return norm_length * x_unit
+
+
+def scale_l2_3d(x, norm_length):
+    """
+
+    :param x: 3D tensor
+    :param norm_length:
+    :return:
+    """
+    # shape(x) = (batch, num_timesteps, d)
+    # Divide x by max(abs(x)) for a numerically stable L2 norm.
+    # 2norm(x) = a * 2norm(x/a)
+    # Scale over the full sequence, dims (1, 2)
+    alpha = tf.reduce_max(tf.abs(x), (1, 2), keep_dims=True) + 1e-12
+    l2_norm = alpha * tf.sqrt(
+        tf.reduce_sum(tf.pow(x / alpha, 2), (1, 2), keep_dims=True) + 1e-6)
+    x_unit = x / l2_norm
+    return norm_length * x_unit
 
 
 def test_one_hot_lookup_table():

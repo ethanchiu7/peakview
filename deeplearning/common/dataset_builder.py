@@ -19,10 +19,11 @@ import json
 import copy
 from common import utils
 from common import tf_utils
+from common import tf_embed
 
 
 class DataSource(object):
-    TFRECORD = "tfrecord"
+    TFRECORD = "data"
     TEXT = "text"
     ARRAY = "array"
 
@@ -32,7 +33,7 @@ class DataSetBuilder(object):
         pass
 
     @staticmethod
-    def pattern_to_files(input_files, is_file_patterns):
+    def pattern_to_files(input_files, is_file_patterns, is_hdfs_file=False):
         """
 
         :param patterns:
@@ -45,12 +46,18 @@ class DataSetBuilder(object):
                 input_files = input_files.split(",")
             assert isinstance(input_files, (list, tuple))
             for input_pattern in input_files:
-                input_file_paths.extend(tf.gfile.Glob(input_pattern))
+                if is_hdfs_file and "ClusterNMG" not in input_pattern:
+                    input_pattern = "viewfs://ClusterNMG" + input_pattern
+                input_file_paths.extend(tf.io.gfile.glob(input_pattern))
         else:
             if isinstance(input_files, str):
                 input_files = input_files.split(",")
             assert isinstance(input_files, (list, tuple))
-            input_file_paths.extend(input_files)
+            for f in input_files:
+                if is_hdfs_file and "ClusterNMG" not in f:
+                    f = "viewfs://ClusterNMG" + f
+                if tf.io.gfile.exists(f):
+                    input_file_paths.append(f)
         return input_file_paths
 
     @classmethod
@@ -73,6 +80,8 @@ class DataSetBuilder(object):
 
     @classmethod
     def get_tfrecord_input_fn(cls, input_files, name_to_features, batch_size, epoch, shuffle_input_files, num_cpu_threads):
+        if not num_cpu_threads:
+            num_cpu_threads = 4
         """
 
         :param input_files: list of file path, or list of file pattern, or string which split by ","
@@ -99,7 +108,7 @@ class DataSetBuilder(object):
         :return: input_fn
         """
 
-        def _decode_record(record, name_to_features, sparse_to_dense=True):
+        def _decode_record(record, name_to_features):
             """Decodes a record to a TensorFlow example."""
             example = tf.io.parse_single_example(record, name_to_features)
 
@@ -107,10 +116,10 @@ class DataSetBuilder(object):
             # So cast all int64 to int32.
             for name in list(example.keys()):
                 t = example[name]
-                if t.dtype == tf.int64:
-                    t = tf.cast(t, tf.int32)
-                if sparse_to_dense and isinstance(t, tf.SparseTensor):
-                    t = tf.sparse.to_dense(t)
+                # if t.dtype == tf.int64:
+                #     t = tf.cast(t, tf.int32)
+                # if isinstance(t, tf.SparseTensor):
+                #     t = tf.sparse.to_dense(t)
                 example[name] = t
             return example
 
@@ -124,13 +133,14 @@ class DataSetBuilder(object):
 
             # For training, we want a lot of parallel reading and shuffling.
             # For eval, we want no shuffling and parallel reading doesn't matter.
+
             if shuffle_input_files:
                 d = tf.data.Dataset.from_tensor_slices(tf.constant(input_files))
                 d = d.repeat(count=epoch)
                 d = d.shuffle(buffer_size=len(input_files))
 
                 # `cycle_length` is the number of parallel files that get read.
-                cycle_length = min(num_cpu_threads, len(input_files))
+                cycle_length = min(max(num_cpu_threads, 1), len(input_files))
 
                 # `sloppy` mode means that the interleaving is not exact. This adds
                 # even more randomness to the training pipeline.
@@ -158,7 +168,83 @@ class DataSetBuilder(object):
                     batch_size=batch_size,
                     num_parallel_batches=num_cpu_threads,
                     drop_remainder=True))
+            d = d.map(lambda batch_data:
+                        {
+                            i: tf.sparse.to_dense(batch_data[i]) if isinstance(batch_data[i], tf.SparseTensor) else batch_data[i] for i in batch_data
+                        }
+                      , num_parallel_calls=num_cpu_threads
+                     )
             # d = d.map(lambda batch_data: {i: tf.sparse.to_dense(batch_data[i]) for i in batch_data})
+
             return d
 
         return input_fn
+
+
+def test_tfrecord_input_fn_builder():
+    # input_files = "/Users/didi/PycharmProjects/dd-peakview/data/rp_rank_pairwise/1_beijing/3.4.2/20211021/29_numerical_fea.data"
+    input_files = "/Users/didi/PycharmProjects/dd-peakview/data/often_route_tfrecord/part-r-00118"
+
+    name_to_features = {
+        "labels": tf.io.FixedLenFeature([], tf.float32),
+        "order_id": tf.io.FixedLenFeature([], tf.int64),
+        "order_max_link_len": tf.io.FixedLenFeature([], tf.int64),
+
+        "req_time": tf.io.FixedLenFeature([], tf.int64),
+        "passenger_id": tf.io.FixedLenFeature([], tf.int64),
+        "driver_id": tf.io.FixedLenFeature([], tf.int64),
+        "spos": tf.io.FixedLenFeature([2], tf.float32),
+        "dpos": tf.io.FixedLenFeature([2], tf.float32),
+
+        "links": tf.io.VarLenFeature(tf.int64),
+        "num_fea": tf.io.FixedLenFeature([87], tf.float32),
+        "num_fea_mat_norm_minmax": tf.io.FixedLenFeature([87], tf.float32),
+        "num_fea_mat_norm_z_score": tf.io.FixedLenFeature([87], tf.float32),
+
+        "links_neg": tf.io.VarLenFeature(tf.int64),
+        "num_fea_neg": tf.io.FixedLenFeature([87], tf.float32),
+        "num_fea_mat_norm_minmax_neg": tf.io.FixedLenFeature([87], tf.float32),
+        "num_fea_mat_norm_z_score_neg": tf.io.FixedLenFeature([87], tf.float32),
+    }
+
+    # if True:
+    #     name_to_features["label"] = tf.io.FixedLenFeature([], tf.int64)
+
+    input_fn = DataSetBuilder.get_tfrecord_input_fn(input_files=[input_files],
+                                                    name_to_features=name_to_features, batch_size=2, epoch=1, shuffle_input_files=False, num_cpu_threads=None)
+
+    ds = input_fn(params=None)
+    # ds = tf.data.TFRecordDataset(input_files)
+
+    link_id2index = utils.DataLoader(file_path="/Users/didi/PycharmProjects/dd-peakview/model_dir/often_route_pairwise_v1/link_dict.txt", sep=" ", key_idx=0, value_idx=1).result
+    first_index_token = "0"
+    vocabulary_token_list = [first_index_token] + list(link_id2index.keys())
+    vocabulary_token_list = [int(i) for i in vocabulary_token_list]
+    vocabulary_index_list = [first_index_token] + list(link_id2index.values())
+    vocabulary_index_list = [int(i) for i in vocabulary_index_list]
+
+    ori_link_dict_size = len(vocabulary_index_list)
+    print("ori_link_dict_size: ", ori_link_dict_size)
+    link_idx_table_layer = tf_embed.StaticVocabularyTableLayer(vocabulary_token_list,
+                                                               vocabulary_index_list=vocabulary_index_list,
+                                                               default_index_start=0, num_oov_buckets=4,
+                                                               lookup_key_dtype=tf.int64)
+
+    for i, batch_data in enumerate(ds):
+        if i >= 1:
+            break
+        # print("----------------------- {} ----------------------".format(i))
+        # tf.print(tf_utils.convert_ndarrays_to_strings(tf_utils.convert_tensors_to_ndarrays(batch_data)))
+        # tf.print(batch_data)
+        # tf.print(batch_data["order_id"])
+        # tf.print(batch_data["order_max_link_len"])
+        print(batch_data["links"])
+        print(">>>>>>>>>>>>")
+        print(link_idx_table_layer(batch_data["links"], tf.int32))
+
+
+if __name__ == '__main__':
+    tf.logging.set_verbosity(tf.logging.INFO)
+    tf.enable_eager_execution()
+
+    test_tfrecord_input_fn_builder()
