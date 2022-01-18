@@ -15,6 +15,7 @@ from __future__ import print_function
 import collections
 import csv
 import os
+import sys
 import enum
 import json
 import numpy as np
@@ -60,7 +61,7 @@ def define_flags():
                       "Run this py mode, TRAIN/EVAL/TRAIN_WITH_EVAL/PREDICT")
     flags.DEFINE_enum("log_verbosity", LogVerbosity.INFO.name, [e.name for e in LogVerbosity],
                       "tf logging set_verbosity, DEBUG/INFO/WARN/ERROR/FATAL")
-    flags.DEFINE_string("modeling", "often_route_pairwise_v1", "define how to build current modeling")
+    flags.DEFINE_string("modeling", "bert_pretrain", " 项目中 modeling 目录模型插件的文件名, 或其他任何模型插件的绝对路径")
 
     flags.DEFINE_boolean("use_gpu", False, "If use GPU.")
 
@@ -269,9 +270,17 @@ def main(_):
                                                                     num_cpu_threads=1)
 
     # model_fn
-    to_import_module = "modeling.{}".format(FLAGS.modeling)
-    print("======== import : {}".format(to_import_module))
+    FLAGS.modeling = FLAGS.modeling.strip('.py')
+    if '/' in FLAGS.modeling:
+        modeling_dir = os.path.dirname(FLAGS.modeling)
+        assert os.path.exists(modeling_dir)
+        to_import_module = sys.path.append(os.path.basename(FLAGS.modeling))
+        print("======== import : {}".format(FLAGS.modeling))
+    else:
+        to_import_module = "modeling.{}".format(FLAGS.modeling)
+        print("======== import : {}".format(to_import_module))
     modeling = importlib.import_module(to_import_module)
+
     model_builder = modeling.ModelBuilder(model_dir=FLAGS.model_dir)
     model_fn = model_fn_builder(init_checkpoint=FLAGS.init_checkpoint, model_builder=model_builder)
 
