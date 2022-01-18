@@ -185,6 +185,7 @@ def main(_):
 
     if not FLAGS.model_dir:
         FLAGS.model_dir = os.path.join(PROJECT_DIR, "model_dir", FLAGS.modeling)
+    utils.DirUtils.ensure_dir(FLAGS.model_dir)
     if not FLAGS.init_checkpoint:
         FLAGS.init_checkpoint = FLAGS.model_dir
     estimator_info_str = """
