@@ -75,7 +75,7 @@ def define_flags():
     flags.DEFINE_boolean("is_file_patterns", running_config.is_file_patterns,
                          "If train_file / eval_file / predict_file is file patterns.")
     # is_hdfs_file
-    flags.DEFINE_boolean("is_hdfs_file", running_config.is_file_patterns,
+    flags.DEFINE_boolean("is_hdfs_file", False,
                          "If True, inputs should start with viewfs://ClusterNMG .")
     flags.DEFINE_string("train_file", running_config.train_file,
                         "Input TF example files (can be a glob or comma separated).")
