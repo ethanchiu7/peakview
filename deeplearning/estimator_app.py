@@ -280,7 +280,6 @@ def main(_):
         to_import_module = "modeling.{}".format(FLAGS.modeling)
         print("======== import : {}".format(to_import_module))
     modeling = importlib.import_module(to_import_module)
-
     model_builder = modeling.ModelBuilder(model_dir=FLAGS.model_dir)
     model_fn = model_fn_builder(init_checkpoint=FLAGS.init_checkpoint, model_builder=model_builder)
 

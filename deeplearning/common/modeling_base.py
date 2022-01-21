@@ -33,7 +33,7 @@ class ModelBuilder(metaclass=ABCMeta):
         self.train_op = None
 
     @abstractmethod
-    def get_name_to_features(self, with_labels=True):
+    def get_name_to_features(self, is_training=True):
         seq_length = 128
         max_predictions_per_seq = 15
         # BERT
@@ -47,7 +47,7 @@ class ModelBuilder(metaclass=ABCMeta):
         return name_to_features
 
     @abstractmethod
-    def build_model(self, features, labels, is_training, with_labels=True):
+    def build_model(self, features, labels, is_training):
         input_ids = features["input_ids"]
         input_mask = features["input_mask"]
         segment_ids = features["segment_ids"]
