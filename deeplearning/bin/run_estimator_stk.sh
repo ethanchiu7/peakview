@@ -41,11 +41,11 @@ main() {
     --use_gpu=True            \
     --init_checkpoint="${INIT_DIR}" \
     --model_dir="${MODEL_DIR}"      \
-    --clear_model_dir=False         \
+    --clean_model_dir=True         \
     --is_file_patterns=True         \
     --train_file=${TRAIN_FILE}      \
     --train_batch_size=64           \
-    --train_epoch=2                 \
+    --train_epoch=5                 \
     --shuffle_train_files=False     \
     --eval_file=${EVAL_FILE}        \
     --eval_batch_size=32            \

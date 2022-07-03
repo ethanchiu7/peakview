@@ -37,8 +37,8 @@ print(info_str)
 class ModelConfig(config_base.ModelConfig):
   """Configuration for `BertModel`."""
 
-  def __init__(self, learning_rate=5e-5, vocab_size=512, num_labels=2, max_sentence_len=64, dist_bucket_boundaries=None, hidden_size=768,
-               num_hidden_layers=12, num_attention_heads=12, intermediate_size=3072, hidden_act="gelu",
+  def __init__(self, learning_rate=5e-5, vocab_size=512, num_labels=2, max_sentence_len=64, dist_bucket_boundaries=None, hidden_size=128,
+               num_hidden_layers=2, num_attention_heads=4, intermediate_size=256, hidden_act="gelu",
                hidden_dropout_prob=0.1, attention_probs_dropout_prob=0.1, max_position_embeddings=512,
                type_vocab_size=3, initializer_range=0.02, max_predictions_per_seq=15):
     """Constructs BertConfig.
@@ -95,7 +95,6 @@ class ModelBuilder(modeling_base.ModelBuilder):
 
         self.probabilities = None
         self.batch_sample_loss = None
-        self.sample_available = None
         self.log_probs = None
         self.labels = None
         self.label_weights = None
@@ -116,8 +115,7 @@ class ModelBuilder(modeling_base.ModelBuilder):
 
         self.embedding_output = None
 
-        self.model_config = ModelConfig(max_sentence_len=64, hidden_size=512,
-                                        num_hidden_layers=4, num_attention_heads=8, intermediate_size=1024)
+        self.model_config = ModelConfig()
 
     def get_name_to_features(self, with_labels=True):
         model_conf = self.model_config
@@ -150,19 +148,14 @@ class ModelBuilder(modeling_base.ModelBuilder):
         # next_6_close = tf.where(tf.is_nan(next_6_close), tf.zeros_like(next_6_close), next_6_close)
 
         next_6_close = tf.reshape(next_6_close, [-1, 6])
-        next_6_close_1 = next_6_close[:, 5]
+        next_6_close_1 = next_6_close[:, 1]
         next_6_close_0 = next_6_close[:, 0]
-
-        # and 条件同时成立才参与计算 Loss
-        loss_w_and_1 = tf.cast((next_6_close_0 > 0), tf.float32)
-        loss_w_and_2 = tf.cast((next_6_close_1 > 0), tf.float32)
-        loss_w = loss_w_and_1 * loss_w_and_2
-
         profit = tf.math.divide_no_nan((next_6_close_1 - next_6_close_0), next_6_close_0)
-        profit = tf.clip_by_value(profit, -0.1, 0.1)
-        # profit = tf.reshape(profit, [-1])
+        profit = tf.clip_by_value(profit, -10, 10)
+        profit = tf.reshape(profit, [-1])
         profit_labels = tf.cast(tf.greater(profit, 0), tf.float32)
         profit_labels = tf.reshape(profit_labels, [-1])
+        profit_loss_weights = tf.abs(profit) * 100
 
         # 1 2 3
         # 2 3
@@ -170,116 +163,34 @@ class ModelBuilder(modeling_base.ModelBuilder):
         input_shape = get_shape_list(input_state, expected_rank=2)
         batch_size = input_shape[0]
         security_size = 4
-        fea_size = 15
+        security_fea_size = 15
         seq_length = 64
 
-        input_state = tf.reshape(input_state, [batch_size, security_size, fea_size, seq_length])
+        input_state = tf.reshape(input_state, [batch_size, security_size, security_fea_size, seq_length])
         # [batch_size, seq_length, security_size, security_fea_size]
         input_state = tf.transpose(input_state, [0, 3, 1, 2])
-
-        # ----- input features
-        open = input_state[:, :, 0, 0]
-        close = input_state[:, :, 0, 1]
-        high = input_state[:, :, 0, 2]
-        low = input_state[:, :, 0, 3]
-        volume = input_state[:, :, 0, 4]
-        sma_5 = input_state[:, :, 0, 5]
-        sma_10 = input_state[:, :, 0, 6]
-        sma_20 = input_state[:, :, 0, 7]
-        sma_30 = input_state[:, :, 0, 8]
-        sma_60 = input_state[:, :, 0, 9]
-        sma_5_volume = input_state[:, :, 0, 10]
-        sma_10_volume = input_state[:, :, 0, 11]
-        macd_dif = input_state[:, :, 0, 12]
-        macd_dea = input_state[:, :, 0, 13]
-        macd_m = input_state[:, :, 0, 14]
-
-        # -------- 计算额外特征
-        # 价的相对变化
-        close_sma5_variance = (close - sma_5)/ sma_5
-        close_sma20_variance = (close - sma_20)/ sma_20
-        close_sma60_variance = (close - sma_60)/ sma_60
-        # 量的相对变化
-        volume_sma5_variance = (volume - sma_5_volume)/ sma_5_volume
-
-        #
-
-
-        # --------- 约束条件 做训练 和 预测 [B]
-        # close_greater_ma60 = tf.cast(close[:, -1] >= sma_60[:, -1], tf.float32)
-        # dif_greater_zero = tf.cast(macd_dif[:, -1] > 0, tf.float32)
-        volume_greater_zero = tf.cast(volume[:, -1] > 0, tf.float32)
-
-        # 最近10日存在量异常
-        volume_variance_anomaly_and_1 = tf.cast(tf.abs(volume_sma5_variance) > 0.8, tf.float32)
-        volume_variance_anomaly_and_2 = tf.cast(tf.abs(volume_sma5_variance) < 2, tf.float32)
-
-        volume_variance_anomaly = tf.reduce_sum((volume_variance_anomaly_and_1 + volume_variance_anomaly_and_2)[:, -10:], axis=1)
-        volume_variance_anomaly = tf.cast(volume_variance_anomaly > 0, tf.float32)
-
-        # merge 条件
-        # sample_available = close_greater_ma60 * dif_greater_zero
-        sample_available = volume_greater_zero
-        sample_available *= volume_variance_anomaly
-
-        profit_loss_weights = tf.abs(profit) * loss_w * sample_available * 100
 
         # td features
         input_state_1 = input_state[:, 1:, :, :]
         input_state_2 = input_state[:, :-1, :, :]
         input_state_td = tf.math.divide_no_nan((input_state_1 - input_state_2), input_state_2)
         input_state_td = tf.clip_by_value(input_state_td, -5, 5)
-        input_state_td = tf.concat([tf.zeros(shape=[batch_size, 1, security_size, fea_size]), input_state_td], axis=1)
+        input_state_td = tf.concat([tf.zeros(shape=[batch_size, 1, security_size, security_fea_size]), input_state_td], axis=1)
 
         # cross features
         # price_features = input_status[:, :, :, :]
 
-        all_fea = tf.concat([input_state, input_state_td,
-                                # tf.reshape(close_sma5_variance, [batch_size, seq_length, 1, 1]),
-                                #  tf.reshape(close_sma20_variance, [batch_size, seq_length, 1, 1]),
-                                #  tf.reshape(close_sma60_variance, [batch_size, seq_length, 1, 1]),
-                                #  tf.reshape(volume_sma5_variance, [batch_size, seq_length, 1, 1])
-                                 ], axis=-1)
-        # new_feature_size = security_size * fea_size * 2
-        all_fea = tf.clip_by_norm(all_fea, 1, axes=[1])
-        all_fea = tf.reshape(all_fea, [batch_size, seq_length, security_size, fea_size * 2])
+        input_state = tf.concat([input_state, input_state_td], axis=-1)
+        input_state = tf.clip_by_norm(input_state, 1, axes=[1])
+        input_state = tf.reshape(input_state, [batch_size, seq_length, security_size * security_fea_size * 2])
 
-        # attention features
-        # input_state = tf.reshape(input_state, [batch_size * seq_length, new_feature_size, 1])
-        # fea_model = BertModel(
-        #     config=self.fea_model_config,
-        #     is_training=is_training,
-        #     input_state=input_state,
-        #     scope="fea_model")
-        #
-        # # [batch_size * seq_length, hidden_size]
-        # input_state = fea_model.get_pooled_output()
-        # input_state = tf.reshape(input_state, [batch_size, seq_length, self.fea_model_config.hidden_size])
-        # CNN
-        cnn_01 = tf.layers.Conv2D(filters=256, kernel_size=(4, 4), padding='same', activation='relu', name="cnn_01")
-        cnn_02 = tf.layers.Conv2D(filters=128, kernel_size=(4, 4), padding='same', activation='relu', name="cnn_02")
-        cnn_03 = tf.layers.Conv2D(filters=64, kernel_size=(4, 4), padding='same', activation='relu', name="cnn_03")
-
-        cnn_01_out = cnn_01.apply(all_fea)
-        cnn_01_out = layer_norm(cnn_01_out)
-
-        cnn_02_out = cnn_02.apply(cnn_01_out)
-        cnn_02_out = layer_norm(cnn_02_out)
-
-        cnn_03_out = cnn_03.apply(cnn_02_out)
-        cnn_03_out = layer_norm(cnn_03_out)
-
-        cnn_out = tf.concat([all_fea, cnn_01_out, cnn_02_out, cnn_03_out], axis=3)
-        cnn_out = tf.reshape(cnn_out, [batch_size, seq_length, security_size * (fea_size * 2 + 256 + 128 + 64)])
-
-        seq_model = BertModel(
+        model = BertModel(
             config=self.model_config,
             is_training=is_training,
-            input_state=cnn_out,
-            scope="seq_model")
+            input_state=input_state)
 
         (batch_mean_loss, batch_sample_loss, log_probs) = get_next_sentence_output(
-            model_config, seq_model.get_pooled_output(), labels=profit_labels, loss_weights=profit_loss_weights)
+            model_config, model.get_pooled_output(), labels=profit_labels, loss_weights=profit_loss_weights)
         # self.pooled_output = model.get_pooled_output()
 
         # pretrain loss
@@ -292,20 +203,19 @@ class ModelBuilder(modeling_base.ModelBuilder):
 
         # tf.summary.scalar("loss", loss)
         # tf.summary.scalar("accuracy", tf_util.batch_accuracy_binary(log_probs, profit_labels))
-        self.sample_available = sample_available
-        self.log_probs = log_probs * sample_available
+        self.log_probs = log_probs
         self.labels = profit_labels
         self.label_weights = profit_loss_weights
         self.batch_sample_loss = batch_sample_loss
         self.batch_mean_loss = batch_mean_loss
 
-    def get_train_op(self):
+    def get_train_op(self, learning_rate):
         """Creates an optimizer training op."""
         global_step = tf.train.get_or_create_global_step()
         # learning_rate = cls._decay_warmup_lr(global_step, init_lr, num_decay_steps, end_learning_rate, decay_pow,
         #                                      num_warmup_steps)
 
-        optimizer = tf.train.AdamOptimizer(learning_rate=self.model_config.learning_rate)
+        optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
 
         tvars = tf.trainable_variables()
         grads = tf.gradients(self.batch_mean_loss, tvars)
@@ -327,11 +237,11 @@ class ModelBuilder(modeling_base.ModelBuilder):
     def get_metric_ops(self):
         """Computes the loss and accuracy of the modeling."""
 
-        predictions = tf.cast(self.log_probs > 0.5, tf.int32)
+        predictions = tf.cast(self.log_probs >= 0.5, tf.int32)
         accuracy = tf.metrics.accuracy(
-            labels=self.labels, predictions=predictions, weights=self.sample_available)
+            labels=self.labels, predictions=predictions)
         mean_loss = tf.metrics.mean(
-            values=self.batch_sample_loss, weights=self.sample_available)
+            values=self.batch_sample_loss)
 
         return {
             "eval_accuracy": accuracy,
@@ -351,7 +261,7 @@ class ModelBuilder(modeling_base.ModelBuilder):
     def get_training_hooks(self):
         training_hooks = [
             tf.train.LoggingTensorHook({"accuracy": tf_utils.batch_accuracy_binary(
-                self.log_probs, self.labels, self.sample_available),
+                self.log_probs, self.labels),
                                         "batch_mean_loss": self.batch_mean_loss
                                         }, every_n_iter=100)
         ]
@@ -586,7 +496,6 @@ def dropout(input_tensor, dropout_prob):
 
   output = tf.nn.dropout(input_tensor, rate=dropout_prob)
   return output
-
 
 def layer_norm(input_tensor, name=None):
   """Run layer normalization on the last dimension of the tensor."""
@@ -1313,9 +1222,7 @@ def get_next_sentence_output(bert_config: ModelConfig, input_tensor, labels, los
     # per_batch_sample_loss = -tf.reduce_sum(one_hot_labels * log_probs, axis=-1)
     per_batch_sample_loss = tf.nn.sigmoid_cross_entropy_with_logits(labels=labels, logits=logits)
     per_batch_sample_loss *= loss_weights
-    loss = tf.cond(tf.reduce_sum(loss_weights) > 0,
-                   lambda: tf.reduce_mean(tf.boolean_mask(per_batch_sample_loss, loss_weights > 0)),
-                   lambda: tf.constant(0.0, tf.float32))
+    loss = tf.reduce_mean(per_batch_sample_loss)
     return (loss, per_batch_sample_loss, log_probs)
 
 

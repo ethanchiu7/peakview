@@ -88,7 +88,7 @@ class ModelConfig(config_base.ModelConfig):
 
 
 class ModelBuilder(modeling_base.ModelBuilder):
-    def __init__(self):
+    def __init__(self, model_dir):
         super().__init__()
         self.name = None
         self.datetime = None
@@ -119,7 +119,7 @@ class ModelBuilder(modeling_base.ModelBuilder):
         self.model_config = ModelConfig(max_sentence_len=64, hidden_size=512,
                                         num_hidden_layers=4, num_attention_heads=8, intermediate_size=1024)
 
-    def get_name_to_features(self, with_labels=True):
+    def get_name_to_features(self, is_training=True):
         model_conf = self.model_config
 
         name_to_features = {"name": tf.io.FixedLenFeature([], tf.string),
@@ -132,7 +132,7 @@ class ModelBuilder(modeling_base.ModelBuilder):
 
         return name_to_features
 
-    def build_model(self, features, profit_labels, is_training, with_labels=True):
+    def build_model(self, features, labels, is_training, with_labels=True):
         """Creates a classification modeling."""
         tf.logging.info("[create_model] creating ...")
         model_config = self.model_config
@@ -150,19 +150,21 @@ class ModelBuilder(modeling_base.ModelBuilder):
         # next_6_close = tf.where(tf.is_nan(next_6_close), tf.zeros_like(next_6_close), next_6_close)
 
         next_6_close = tf.reshape(next_6_close, [-1, 6])
-        next_6_close_1 = next_6_close[:, 5]
+        next_6_close_1 = next_6_close[:, 1]
         next_6_close_0 = next_6_close[:, 0]
+
+        profit = tf.math.divide_no_nan((next_6_close_1 - next_6_close_0), next_6_close_0)
+        profit = tf.clip_by_value(profit, -0.5, 0.7)
+        # profit = tf.reshape(profit, [-1])
+        labels = tf.cast(tf.greater(profit, 0), tf.float32)
+        labels = tf.reshape(labels, [-1])
 
         # and 条件同时成立才参与计算 Loss
         loss_w_and_1 = tf.cast((next_6_close_0 > 0), tf.float32)
         loss_w_and_2 = tf.cast((next_6_close_1 > 0), tf.float32)
+        loss_w_and_3 = tf.cast(tf.abs(profit) > 0.01, tf.float32)
         loss_w = loss_w_and_1 * loss_w_and_2
-
-        profit = tf.math.divide_no_nan((next_6_close_1 - next_6_close_0), next_6_close_0)
-        profit = tf.clip_by_value(profit, -0.1, 0.1)
-        # profit = tf.reshape(profit, [-1])
-        profit_labels = tf.cast(tf.greater(profit, 0), tf.float32)
-        profit_labels = tf.reshape(profit_labels, [-1])
+        loss_w *= loss_w_and_3
 
         # 1 2 3
         # 2 3
@@ -222,7 +224,7 @@ class ModelBuilder(modeling_base.ModelBuilder):
         sample_available = volume_greater_zero
         sample_available *= volume_variance_anomaly
 
-        profit_loss_weights = tf.abs(profit) * loss_w * sample_available * 100
+        loss_weights = tf.abs(profit) * loss_w * sample_available * 10
 
         # td features
         input_state_1 = input_state[:, 1:, :, :]
@@ -242,44 +244,39 @@ class ModelBuilder(modeling_base.ModelBuilder):
                                  ], axis=-1)
         # new_feature_size = security_size * fea_size * 2
         all_fea = tf.clip_by_norm(all_fea, 1, axes=[1])
-        all_fea = tf.reshape(all_fea, [batch_size, seq_length, security_size, fea_size * 2])
+        # all_fea = tf.reshape(all_fea, [batch_size, seq_length, security_size, fea_size * 2])
 
-        # attention features
-        # input_state = tf.reshape(input_state, [batch_size * seq_length, new_feature_size, 1])
-        # fea_model = BertModel(
-        #     config=self.fea_model_config,
-        #     is_training=is_training,
-        #     input_state=input_state,
-        #     scope="fea_model")
-        #
-        # # [batch_size * seq_length, hidden_size]
-        # input_state = fea_model.get_pooled_output()
-        # input_state = tf.reshape(input_state, [batch_size, seq_length, self.fea_model_config.hidden_size])
+        # 变为二维图像
+        all_fea = tf.reshape(all_fea, [batch_size, seq_length, security_size * fea_size * 2])
+        all_fea = all_fea * 128 // 1
+        all_fea = tf.cast(all_fea, tf.int32)
+        all_fea = tf.one_hot(all_fea, 128)
+        all_fea = tf.transpose(all_fea, [0, 1, 3, 2])
+        all_fea = tf.reshape(all_fea, [batch_size, seq_length, 128, security_size * fea_size * 2])
+
+        # GoogleNet
+        # tf.layers.conv2d()
+        # tf.keras.applications.inception_v3.InceptionV3()
+
         # CNN
-        cnn_01 = tf.layers.Conv2D(filters=256, kernel_size=(4, 4), padding='same', activation='relu', name="cnn_01")
-        cnn_02 = tf.layers.Conv2D(filters=128, kernel_size=(4, 4), padding='same', activation='relu', name="cnn_02")
-        cnn_03 = tf.layers.Conv2D(filters=64, kernel_size=(4, 4), padding='same', activation='relu', name="cnn_03")
+        for i, d in enumerate([512, 512, 512]):
+            with tf.variable_scope("cnn_block_{}".format(i)) as scope:
+                all_fea = tf.layers.batch_normalization(all_fea, axis=[1, 2], name='bn')
+                all_fea = tf.layers.conv2d(all_fea, filters=d, kernel_size=4, padding='same', activation='relu',
+                                           kernel_initializer=create_initializer(model_config.initializer_range), name="cnn")
+                all_fea = tf.layers.max_pooling2d(all_fea, pool_size=d, strides=1, padding='same')
 
-        cnn_01_out = cnn_01.apply(all_fea)
-        cnn_01_out = layer_norm(cnn_01_out)
+        #
+        global_pool = tf.keras.layers.GlobalAvgPool2D()
+        # [B, Channel]
+        all_fea = global_pool(all_fea)
 
-        cnn_02_out = cnn_02.apply(cnn_01_out)
-        cnn_02_out = layer_norm(cnn_02_out)
-
-        cnn_03_out = cnn_03.apply(cnn_02_out)
-        cnn_03_out = layer_norm(cnn_03_out)
-
-        cnn_out = tf.concat([all_fea, cnn_01_out, cnn_02_out, cnn_03_out], axis=3)
-        cnn_out = tf.reshape(cnn_out, [batch_size, seq_length, security_size * (fea_size * 2 + 256 + 128 + 64)])
-
-        seq_model = BertModel(
-            config=self.model_config,
-            is_training=is_training,
-            input_state=cnn_out,
-            scope="seq_model")
+        for i, d in enumerate([512, 512, 512]):
+            with tf.variable_scope("dnn_block_{}".format(i)) as scope:
+                all_fea = tf.layers.dense(all_fea, d, activation='relu', kernel_initializer=create_initializer(model_config.initializer_range))
 
         (batch_mean_loss, batch_sample_loss, log_probs) = get_next_sentence_output(
-            model_config, seq_model.get_pooled_output(), labels=profit_labels, loss_weights=profit_loss_weights)
+            model_config, all_fea, labels=labels, loss_weights=loss_weights)
         # self.pooled_output = model.get_pooled_output()
 
         # pretrain loss
@@ -294,8 +291,8 @@ class ModelBuilder(modeling_base.ModelBuilder):
         # tf.summary.scalar("accuracy", tf_util.batch_accuracy_binary(log_probs, profit_labels))
         self.sample_available = sample_available
         self.log_probs = log_probs * sample_available
-        self.labels = profit_labels
-        self.label_weights = profit_loss_weights
+        self.labels = labels
+        self.label_weights = loss_weights
         self.batch_sample_loss = batch_sample_loss
         self.batch_mean_loss = batch_mean_loss
 
